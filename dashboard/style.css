@@ -1,0 +1,19 @@
+/* Standalone Bulksender Style Override */
+body {
+  font-family: 'Inter', system-ui, sans-serif;
+}
+
+/* Custom layout rules for dashboard range knobs and controls */
+input[type="range"]::-webkit-slider-thumb {
+  background: #C5A059;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+}
+
+input[type="range"]::-moz-range-thumb {
+  background: #C5A059;
+  border-radius: 50%;
+  width: 16px;
+  height: 16px;
+}

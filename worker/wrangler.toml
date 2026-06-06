@@ -1,0 +1,9 @@
+﻿name = "bulk-sender-fairouzz-api"
+main = "src/index.ts"
+compatibility_date = "2025-12-01"
+workers_dev = true
+
+[[d1_databases]]
+binding = "DB"
+database_name = "nabda-bulk-whatsapp-db"
+database_id = "ddd3f9e0-bd0f-4b91-a45d-4ad8158ea895"

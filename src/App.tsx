@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+﻿import React, { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import DashboardView from "./components/DashboardView";
 import CampaignsView from "./components/CampaignsView";
@@ -39,6 +39,45 @@ export default function App() {
   // Navigation & Language Locales
   const [activeSection, setActiveSection] = useState<string>("dashboard");
   const [lang, setLang] = useState<"ar" | "en">("ar");
+
+  const [apiStatus, setApiStatus] = useState({
+    loading: true,
+    ok: false,
+    message: "Checking Worker API and D1 database..."
+  });
+
+  useEffect(() => {
+    let active = true;
+
+    async function checkApiConnection() {
+      try {
+        const health = await apiGet("/api/health");
+        const db = await apiGet("/api/db-test");
+
+        if (!active) return;
+
+        setApiStatus({
+          loading: false,
+          ok: Boolean(health.ok),
+          message: `Worker + D1 connected. Tables found: ${db.tables?.length ?? 0}`
+        });
+      } catch (error: any) {
+        if (!active) return;
+
+        setApiStatus({
+          loading: false,
+          ok: false,
+          message: `API connection failed: ${error?.message || "Unknown error"}`
+        });
+      }
+    }
+
+    checkApiConnection();
+
+    return () => {
+      active = false;
+    };
+  }, []);
 
   // Core CRM Datastores (Statefully Hydrated from standard localStorage for pristine persistence!)
   const [contacts, setContacts] = useState<Contact[]>(() => {
@@ -104,23 +143,23 @@ export default function App() {
     const cleaningName = name.split("(")[0].trim();
     switch (category) {
       case "Restaurant":
-        return `أهلاً عيني شكراً للدعوة.. معكم كادر مطعم ${cleaningName}. شلون طريقة التسجيل المجاني وسرعة تفعيل الدليل؟`;
+        return `Ø£Ù‡Ù„Ø§Ù‹ Ø¹ÙŠÙ†ÙŠ Ø´ÙƒØ±Ø§Ù‹ Ù„Ù„Ø¯Ø¹ÙˆØ©.. Ù…Ø¹ÙƒÙ… ÙƒØ§Ø¯Ø± Ù…Ø·Ø¹Ù… ${cleaningName}. Ø´Ù„ÙˆÙ† Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠ ÙˆØ³Ø±Ø¹Ø© ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø¯Ù„ÙŠÙ„ØŸ`;
       case "Cafe":
-        return `مرحباً، وصلتنا رسالة شاكو ماكو. نريد نضيف المنيو والصور مالتنا بقسم بغداد/البصرة، شلون نسوي؟`;
+        return `Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ ÙˆØµÙ„ØªÙ†Ø§ Ø±Ø³Ø§Ù„Ø© Ø´Ø§ÙƒÙˆ Ù…Ø§ÙƒÙˆ. Ù†Ø±ÙŠØ¯ Ù†Ø¶ÙŠÙ Ø§Ù„Ù…Ù†ÙŠÙˆ ÙˆØ§Ù„ØµÙˆØ± Ù…Ø§Ù„ØªÙ†Ø§ Ø¨Ù‚Ø³Ù… Ø¨ØºØ¯Ø§Ø¯/Ø§Ù„Ø¨ØµØ±Ø©ØŒ Ø´Ù„ÙˆÙ† Ù†Ø³ÙˆÙŠØŸ`;
       case "Hotel":
-        return `سلاو وبخير هاتبين.. شكراً لكم. هل توجد باقة اشتراك سنوية ممتازة لفندق ${cleaningName} في كردستان؟`;
+        return `Ø³Ù„Ø§Ùˆ ÙˆØ¨Ø®ÙŠØ± Ù‡Ø§ØªØ¨ÙŠÙ†.. Ø´ÙƒØ±Ø§Ù‹ Ù„ÙƒÙ…. Ù‡Ù„ ØªÙˆØ¬Ø¯ Ø¨Ø§Ù‚Ø© Ø§Ø´ØªØ±Ø§Ùƒ Ø³Ù†ÙˆÙŠØ© Ù…Ù…ØªØ§Ø²Ø© Ù„ÙÙ†Ø¯Ù‚ ${cleaningName} ÙÙŠ ÙƒØ±Ø¯Ø³ØªØ§Ù†ØŸ`;
       case "Beauty Salon":
-        return `فدوة دزولنا تفاصيل العرض وشلون نوثق اللوكيشن مالتنا ونضيف ميزات صالون الحلاقة؟`;
+        return `ÙØ¯ÙˆØ© Ø¯Ø²ÙˆÙ„Ù†Ø§ ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø¹Ø±Ø¶ ÙˆØ´Ù„ÙˆÙ† Ù†ÙˆØ«Ù‚ Ø§Ù„Ù„ÙˆÙƒÙŠØ´Ù† Ù…Ø§Ù„ØªÙ†Ø§ ÙˆÙ†Ø¶ÙŠÙ Ù…ÙŠØ²Ø§Øª ØµØ§Ù„ÙˆÙ† Ø§Ù„Ø­Ù„Ø§Ù‚Ø©ØŸ`;
       case "Pharmacy":
-        return `السلام عليكم، هل التسجيل والادراج مجاني للأبد لو اكو اشتراكات مخفية بعد فترة؟ شكراً لجهودكم.`;
+        return `Ø§Ù„Ø³Ù„Ø§Ù… Ø¹Ù„ÙŠÙƒÙ…ØŒ Ù‡Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆØ§Ù„Ø§Ø¯Ø±Ø§Ø¬ Ù…Ø¬Ø§Ù†ÙŠ Ù„Ù„Ø£Ø¨Ø¯ Ù„Ùˆ Ø§ÙƒÙˆ Ø§Ø´ØªØ±Ø§ÙƒØ§Øª Ù…Ø®ÙÙŠØ© Ø¨Ø¹Ø¯ ÙØªØ±Ø©ØŸ Ø´ÙƒØ±Ø§Ù‹ Ù„Ø¬Ù‡ÙˆØ¯ÙƒÙ….`;
       case "Clinic":
-        return `مرحباً بك، نحن عيادة طبية متكاملة. نود الحصول على تفاصيل إضافية حول الترويج المباشر.`;
+        return `Ù…Ø±Ø­Ø¨Ø§Ù‹ Ø¨ÙƒØŒ Ù†Ø­Ù† Ø¹ÙŠØ§Ø¯Ø© Ø·Ø¨ÙŠØ© Ù…ØªÙƒØ§Ù…Ù„Ø©. Ù†ÙˆØ¯ Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ ØªÙØ§ØµÙŠÙ„ Ø¥Ø¶Ø§ÙÙŠØ© Ø­ÙˆÙ„ Ø§Ù„ØªØ±ÙˆÙŠØ¬ Ø§Ù„Ù…Ø¨Ø§Ø´Ø±.`;
       default:
-        return `أهلاً وسهلاً عيوني، مهتمين جداً بالانضمام للدليل مع منصتكم شاكو ماكو. بانتظار التفاصيل خطوة بخطوة.`;
+        return `Ø£Ù‡Ù„Ø§Ù‹ ÙˆØ³Ù‡Ù„Ø§Ù‹ Ø¹ÙŠÙˆÙ†ÙŠØŒ Ù…Ù‡ØªÙ…ÙŠÙ† Ø¬Ø¯Ø§Ù‹ Ø¨Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ù„Ù„Ø¯Ù„ÙŠÙ„ Ù…Ø¹ Ù…Ù†ØµØªÙƒÙ… Ø´Ø§ÙƒÙˆ Ù…Ø§ÙƒÙˆ. Ø¨Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„ØªÙØ§ØµÙŠÙ„ Ø®Ø·ÙˆØ© Ø¨Ø®Ø·ÙˆØ©.`;
     }
   };
 
-  // ⚡ Active Dispatch Interval Engine (Background Simulated Webhook Worker)
+  // âš¡ Active Dispatch Interval Engine (Background Simulated Webhook Worker)
   useEffect(() => {
     // Find first campaign that is running
     const activeCamp = campaigns.find(c => c.status === "running");
@@ -308,7 +347,7 @@ export default function App() {
   }, [campaigns, contacts, templates]);
 
 
-  // ⚡ Manual Single WhatsApp Sim Send
+  // âš¡ Manual Single WhatsApp Sim Send
   const handleSimulateSingleSend = (contactId: string, templateId: string) => {
     const contact = contacts.find(c => c.id === contactId);
     const template = templates.find(t => t.id === templateId) || templates[0];
@@ -354,7 +393,7 @@ export default function App() {
   };
 
 
-  // ✍️ Leads Stage Manual override
+  // âœï¸ Leads Stage Manual override
   const handleUpdateLeadStage = (id: string, stage: LeadStage) => {
     setContacts(prev => prev.map(c => {
       if (c.id === id) {
@@ -386,7 +425,7 @@ export default function App() {
     }));
   };
 
-  // ➕ Create Contact Manual Onboarding
+  // âž• Create Contact Manual Onboarding
   const handleAddContact = (newContact: Omit<Contact, "id" | "updatedAt">) => {
     const contactRecord: Contact = {
       ...newContact,
@@ -397,7 +436,7 @@ export default function App() {
   };
 
 
-  // ➕ Create Campaign
+  // âž• Create Campaign
   const handleCreateCampaign = (campData: Omit<Campaign, "id" | "totalSent" | "delivered" | "read" | "replied" | "interested" | "registered" | "createdAt" | "status">) => {
     const newCamp: Campaign = {
       ...campData,
@@ -419,7 +458,7 @@ export default function App() {
   };
 
 
-  // ➕ Create template
+  // âž• Create template
   const handleCreateTemplate = (tempData: Omit<MessageTemplate, "id">) => {
     const newTemp: MessageTemplate = {
       ...tempData,
@@ -433,7 +472,7 @@ export default function App() {
   };
 
 
-  // 📥 Micro action Inbox Macros
+  // ðŸ“¥ Micro action Inbox Macros
   const handleMarkInterested = (phone: string) => {
     setContacts(prev => prev.map(c => c.phone === phone ? { ...c, leadStage: LeadStage.INTERESTED, updatedAt: new Date().toISOString() } : c));
     setInbox(prev => prev.map(m => m.phone === phone ? { ...m, isRead: true } : m));
@@ -461,7 +500,7 @@ export default function App() {
         messageId: `msg_reglink_${Date.now()}`,
         status: "sent",
         timestamp: new Date().toISOString(),
-        payload: { text: "عزيزي، هذا هو رابط التسجيل الفوري في منصة شاكو ماكو: https://shakumaku.iq/signup", type: "text_cta" }
+        payload: { text: "Ø¹Ø²ÙŠØ²ÙŠØŒ Ù‡Ø°Ø§ Ù‡Ùˆ Ø±Ø§Ø¨Ø· Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ÙÙˆØ±ÙŠ ÙÙŠ Ù…Ù†ØµØ© Ø´Ø§ÙƒÙˆ Ù…Ø§ÙƒÙˆ: https://shakumaku.iq/signup", type: "text_cta" }
       },
       ...p
     ]);
@@ -489,7 +528,7 @@ export default function App() {
   };
 
 
-  // 💬 Inject Simulated Random Incoming Message
+  // ðŸ’¬ Inject Simulated Random Incoming Message
   const handleTriggerSimulatedReply = (customText?: string) => {
     // Pick first contact that has received messages but hasn't replied yet, or fallback to standard
     const activeCandidates = contacts.filter(c => c.lastMessageStatus !== "none" && c.leadStage !== LeadStage.REGISTERED);
@@ -497,7 +536,7 @@ export default function App() {
       ? activeCandidates[Math.floor(Math.random() * activeCandidates.length)]
       : contacts[0];
 
-    const messageText = customText || "أهلاً، حابين نشترك وياكم. شلون طريقة الدفع لو مجاني؟";
+    const messageText = customText || "Ø£Ù‡Ù„Ø§Ù‹ØŒ Ø­Ø§Ø¨ÙŠÙ† Ù†Ø´ØªØ±Ùƒ ÙˆÙŠØ§ÙƒÙ…. Ø´Ù„ÙˆÙ† Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹ Ù„Ùˆ Ù…Ø¬Ø§Ù†ÙŠØŸ";
     
     setContacts(p => p.map(c => c.id === chosenContact.id ? { 
       ...c, 
@@ -707,3 +746,4 @@ export default function App() {
     </div>
   );
 }
+

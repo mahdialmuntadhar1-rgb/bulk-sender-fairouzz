@@ -10,7 +10,6 @@ import {
   Download, 
   Trash2, 
   Filter, 
-  Search, 
   Building2, 
   Plus, 
   Phone, 
@@ -18,11 +17,9 @@ import {
   FileSpreadsheet, 
   Clock,
   Check,
-  Square,
-  CheckSquare,
-  AlertTriangle,
-  User,
-  Sliders
+  Sliders,
+  FileText,
+  AlertTriangle
 } from "lucide-react";
 import { INITIAL_CONTACTS } from "../mockData";
 import { Contact } from "../types";
@@ -118,7 +115,7 @@ export function normalizeIraqPhone(phoneStr: string): {
 }
 
 export default function BulkSenderView({ lang }: BulkSenderViewProps) {
-  // Main state - synced with LocalStorage
+  // Main states - synced with LocalStorage
   const [queue, setQueue] = useState<QueueItem[]>(() => {
     const saved = localStorage.getItem("fairouzz_bulk_queue");
     return saved ? JSON.parse(saved) : [];
@@ -144,24 +141,29 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     return saved ? JSON.parse(saved) : INITIAL_CONTACTS;
   });
 
-  // FEATURE 1: Governorate Sending States
-  const [selectedGovernorates, setSelectedGovernorates] = useState<string[]>([]);
-  const [showGovPreview, setShowGovPreview] = useState(false);
+  // Active Layout Tab State
+  const [activeTab, setActiveTab] = useState<"gov" | "manual" | "csv">("gov");
 
-  // FEATURE 2: Manual Input States
-  const [manualText, setManualText] = useState("");
-  const [analysisResult, setAnalysisResult] = useState<{
-    valid: string[];
-    invalid: { raw: string; reason: string }[];
-    duplicates: string[];
+  // Validation / Preview Summaries to display step 3 info
+  const [validationSummary, setValidationSummary] = useState<{
+    tab: "gov" | "manual" | "csv";
+    total: number;
+    valid: number;
+    invalid: number;
+    duplicates: number;
+    isCrmFallback?: boolean;
+    peek: Array<{ name: string; phone: string; gov: string; cat: string; status: string }>;
   } | null>(null);
 
-  // FEATURE 3: CSV Upload States
+  // TAB 1: Governorate Campaign States
+  const [selectedGovernorates, setSelectedGovernorates] = useState<string[]>([]);
+  
+  // TAB 2: Manual Phones state
+  const [manualText, setManualText] = useState("");
+
+  // TAB 3 / TAB 1 Shared CSV Upload States
   const [csvSourceRows, setCsvSourceRows] = useState<any[]>([]);
   const [csvFileName, setCsvFileName] = useState("");
-  const [csvSelectedGovernorates, setCsvSelectedGovernorates] = useState<string[]>(IRAQ_GOVERNORATES);
-  const [csvSelectedCategory, setCsvSelectedCategory] = useState("All");
-  const [showCsvPreview, setShowCsvPreview] = useState(false);
 
   // Connection & Sending States
   const [nabdaStatus, setNabdaStatus] = useState<"idle" | "testing" | "connected" | "error">("idle");
@@ -172,7 +174,10 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   const [activeQueueIndex, setActiveQueueIndex] = useState<number | null>(null);
   const [sendLogs, setSendLogs] = useState<string[]>([]);
 
-  // Filters State
+  // Advanced section toggle for queue inspector & operations report
+  const [showAdvancedQueue, setShowAdvancedQueue] = useState(false);
+
+  // Filters State for the background inspector table
   const [filterGov, setFilterGov] = useState("All");
   const [filterCat, setFilterCat] = useState("All");
   const [filterSrc, setFilterSrc] = useState("All");
@@ -185,7 +190,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     sendingRef.current = { isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds };
   }, [isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds]);
 
-  // Sync Persistence
+  // Sync Persistence to storage
   useEffect(() => {
     localStorage.setItem("fairouzz_bulk_queue", JSON.stringify(queue));
   }, [queue]);
@@ -198,6 +203,11 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   useEffect(() => {
     localStorage.setItem("fairouzz_bulk_msg", messageText);
   }, [messageText]);
+
+  // Reset validation summary on tab change to prevent contamination
+  useEffect(() => {
+    setValidationSummary(null);
+  }, [activeTab]);
 
   // Test connection function
   const testNabdaConnection = async () => {
@@ -227,130 +237,12 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     setSendLogs(l => [`[${time}] ${line}`, ...l.slice(0, 99)]);
   };
 
-  // Governorate matches counting
+  // Governorate counts inside database fallback
   const getCrmCountByGov = (gov: string) => {
     return crmContacts.filter(c => c.governorate.toLowerCase() === gov.toLowerCase()).length;
   };
 
-  // Matched CRM contacts preview
-  const matchedCrmContacts = crmContacts.filter(c => 
-    selectedGovernorates.some(selectedGov => selectedGov.toLowerCase() === c.governorate.toLowerCase())
-  );
-
-  // FEATURE 1 Handler: Add CRM records to Queue
-  const handleAddGovernorateContactsToQueue = () => {
-    if (matchedCrmContacts.length === 0) {
-      alert(lang === "ar" ? "لم يتم العثور على أي تجار في المحافظات المحددة!" : "No registered businesses found in selected governorates!");
-      return;
-    }
-
-    let added = 0, dups = 0, invs = 0;
-    const newItems: QueueItem[] = [];
-    const newInvalids: any[] = [];
-    const newDuplicates: any[] = [];
-
-    matchedCrmContacts.forEach(contact => {
-      const res = normalizeIraqPhone(contact.phone);
-      if (!res.isValid) {
-        invs++;
-        newInvalids.push({ originalPhone: contact.phone, source: `CRM Gov`, reason: res.reason });
-        return;
-      }
-
-      const dupInQueue = queue.some(q => q.normalizedPhone === res.normalized);
-      const dupInBatch = newItems.some(i => i.normalizedPhone === res.normalized);
-
-      if (dupInQueue || dupInBatch) {
-        dups++;
-        newDuplicates.push({ originalPhone: contact.phone, normalizedPhone: res.normalized, source: `CRM Gov` });
-        return;
-      }
-
-      added++;
-      newItems.push({
-        id: `bulk_gov_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        businessName: contact.businessName,
-        originalPhone: contact.phone,
-        normalizedPhone: res.normalized,
-        governorate: contact.governorate,
-        category: contact.category || "General",
-        source: "governorate",
-        status: res.needsReview ? "needs_review" : "ready",
-        note: res.needsReview ? res.reason : ""
-      });
-    });
-
-    if (newItems.length > 0) setQueue(prev => [...prev, ...newItems]);
-    if (newInvalids.length > 0) setInvalidList(prev => [...newInvalids, ...prev]);
-    if (newDuplicates.length > 0) setDuplicateList(prev => [...newDuplicates, ...prev]);
-
-    setSelectedGovernorates([]);
-    setShowGovPreview(false);
-
-    alert(lang === "ar" 
-      ? `تمت الإضافة بنجاح! الصالحة: ${added} | المرفوضة: ${invs} | المكررة: ${dups}`
-      : `Import completed! Added: ${added} | Invalid: ${invs} | Duplicates: ${dups}`
-    );
-  };
-
-  // FEATURE 2 Handler: Manual Phones analyzer and adder
-  const handleAnalyzeAndAddManual = () => {
-    const rawLines = manualText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
-    if (rawLines.length === 0) {
-      alert(lang === "ar" ? "يرجى كتابة أرقام للتحليل والإدخال!" : "Please enter phone numbers first!");
-      return;
-    }
-
-    const valids: QueueItem[] = [];
-    const invalids: { raw: string; reason: string }[] = [];
-    const duplicates: string[] = [];
-    const seenInInput = new Set<string>();
-
-    rawLines.forEach(raw => {
-      const res = normalizeIraqPhone(raw);
-      if (!res.isValid) {
-        invalids.push({ raw, reason: res.reason });
-        setInvalidList(p => [{ originalPhone: raw, source: "Manual", reason: res.reason }, ...p]);
-        return;
-      }
-
-      const isDupInQueue = queue.some(q => q.normalizedPhone === res.normalized);
-      const isDupInBatch = seenInInput.has(res.normalized);
-
-      if (isDupInQueue || isDupInBatch) {
-        duplicates.push(raw);
-        setDuplicateList(p => [{ originalPhone: raw, normalizedPhone: res.normalized, source: "Manual" }, ...p]);
-        return;
-      }
-
-      seenInInput.add(res.normalized);
-      valids.push({
-        id: `bulk_man_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        businessName: lang === "ar" ? "تاجر يدوي" : "Manual Merchant",
-        originalPhone: raw,
-        normalizedPhone: res.normalized,
-        governorate: "Baghdad",
-        category: "General",
-        source: "manual",
-        status: res.needsReview ? "needs_review" : "ready",
-        note: res.needsReview ? res.reason : ""
-      });
-    });
-
-    if (valids.length > 0) {
-      setQueue(prev => [...prev, ...valids]);
-    }
-
-    setAnalysisResult({
-      valid: valids.map(v => v.normalizedPhone),
-      invalid: invalids,
-      duplicates
-    });
-
-    setManualText("");
-  };
-
-  // FEATURE 3 Handler: Multiple CSV files selector
+  // MULTIPLE CSV Uploader and column parser
   const handleCSVMultiUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files || files.length === 0) return;
@@ -424,153 +316,298 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
 
     setCsvFileName(fileNames.join(", "));
     setCsvSourceRows(accumulatedRows);
-    setCsvSelectedCategory("All");
+    appendConsoleLog(`CSV spreadsheet parsing complete: Loaded ${accumulatedRows.length} total raw lines.`);
   };
 
-  // CSV reactive filtering & stats
-  const csvFilteredRows = csvSourceRows.filter(row => {
-    const govClean = (row.governorate || "Baghdad").trim().toLowerCase();
-    const matchGov = csvSelectedGovernorates.some(g => g.trim().toLowerCase() === govClean);
-    const matchCat = csvSelectedCategory === "All" || row.category === csvSelectedCategory;
-    return matchGov && matchCat;
-  });
+  // PREVIEW & VALIDATION ACTION WORKERS FOR EACH TAB
 
-  const csvStats = (() => {
-    let valid = 0, invalid = 0, duplicates = 0;
+  // TAB 1: Governorate validation
+  const handleValidateGovTab = () => {
+    if (selectedGovernorates.length === 0) {
+      alert(lang === "ar" 
+        ? "يرجى تحديد محافظة واحدة على الأقل للاستهداف!" 
+        : "Please select at least one governorate first!"
+      );
+      return;
+    }
+
+    let sourceRows: any[] = [];
+    let isCrmFallback = false;
+
+    // Filter CSV file if uploaded, otherwise fallback to database
+    if (csvSourceRows.length > 0) {
+      sourceRows = csvSourceRows.filter(row => {
+        const govClean = (row.governorate || "Baghdad").trim().toLowerCase();
+        return selectedGovernorates.some(g => g.trim().toLowerCase() === govClean);
+      });
+    } else {
+      isCrmFallback = true;
+      sourceRows = crmContacts.filter(contact => 
+        selectedGovernorates.some(gov => gov.toLowerCase() === contact.governorate.toLowerCase())
+      ).map(c => ({
+        rawPhone: c.phone,
+        businessName: c.businessName,
+        governorate: c.governorate,
+        category: c.category || "General"
+      }));
+    }
+
+    if (sourceRows.length === 0) {
+      alert(lang === "ar" 
+        ? "تنبيه: لم يتم العثور على أي أرقام هواتف للمحافظات المحددة!" 
+        : "No phone contacts found matching the selected governorates!"
+      );
+      return;
+    }
+
+    let validCount = 0;
+    let invalidCount = 0;
+    let dupCount = 0;
+    const newQueueItems: QueueItem[] = [];
+    const localInvalids: any[] = [];
+    const localDuplicates: any[] = [];
     const seenInBatch = new Set<string>();
 
-    csvFilteredRows.forEach(row => {
-      if (!row.rawPhone) {
-        invalid++;
-        return;
-      }
+    sourceRows.forEach(row => {
       const res = normalizeIraqPhone(row.rawPhone);
       if (!res.isValid) {
-        invalid++;
-      } else {
-        const isDupInQueue = queue.some(q => q.normalizedPhone === res.normalized);
-        const isDupInBatch = seenInBatch.has(res.normalized);
-
-        if (isDupInQueue || isDupInBatch) {
-          duplicates++;
-        } else {
-          seenInBatch.add(res.normalized);
-          valid++;
-        }
-      }
-    });
-
-    return {
-      total: csvFilteredRows.length,
-      valid,
-      invalid,
-      duplicates
-    };
-  })();
-
-  const handleAddCSVToQueueFiltered = () => {
-    if (csvFilteredRows.length === 0) return;
-
-    let added = 0, dups = 0, invs = 0;
-    const newItems: QueueItem[] = [];
-    const newInvalids: any[] = [];
-    const newDuplicates: any[] = [];
-    const seenInBatch = new Set<string>();
-
-    csvFilteredRows.forEach(row => {
-      const res = normalizeIraqPhone(row.rawPhone);
-      if (!res.isValid) {
-        invs++;
-        newInvalids.push({ originalPhone: row.rawPhone || "[Empty]", source: "CSV Upload", reason: res.reason });
+        invalidCount++;
+        localInvalids.push({ originalPhone: row.rawPhone || "[Empty]", source: isCrmFallback ? "CRM Gov" : "CSV Gov", reason: res.reason });
         return;
       }
 
-      const dupInQueue = queue.some(q => q.normalizedPhone === res.normalized);
       const dupInBatch = seenInBatch.has(res.normalized);
-
-      if (dupInQueue || dupInBatch) {
-        dups++;
-        newDuplicates.push({ originalPhone: row.rawPhone, normalizedPhone: res.normalized, source: "CSV Upload" });
+      if (dupInBatch) {
+        dupCount++;
+        localDuplicates.push({ originalPhone: row.rawPhone, normalizedPhone: res.normalized, source: isCrmFallback ? "CRM Gov" : "CSV Gov" });
         return;
       }
 
       seenInBatch.add(res.normalized);
-      added++;
-      newItems.push({
-        id: `bulk_csv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
-        businessName: row.businessName,
+      validCount++;
+      newQueueItems.push({
+        id: `bulk_gov_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        businessName: row.businessName || "Merchant",
         originalPhone: row.rawPhone,
         normalizedPhone: res.normalized,
-        governorate: row.governorate,
-        category: row.category,
+        governorate: row.governorate || "Baghdad",
+        category: row.category || "General",
+        source: "governorate",
+        status: res.needsReview ? "needs_review" : "ready",
+        note: res.needsReview ? res.reason : ""
+      });
+    });
+
+    // Populate active queue
+    setQueue(newQueueItems);
+    if (localInvalids.length > 0) setInvalidList(prev => [...localInvalids, ...prev]);
+    if (localDuplicates.length > 0) setDuplicateList(prev => [...localDuplicates, ...prev]);
+
+    setValidationSummary({
+      tab: "gov",
+      total: sourceRows.length,
+      valid: validCount,
+      invalid: invalidCount,
+      duplicates: dupCount,
+      isCrmFallback,
+      peek: newQueueItems.slice(0, 10).map(q => ({
+        name: q.businessName,
+        phone: q.normalizedPhone,
+        gov: q.governorate,
+        cat: q.category,
+        status: q.status
+      }))
+    });
+
+    appendConsoleLog(`Prepared Governorate Campaign: ${validCount} valid targets mapped into pipeline.`);
+  };
+
+  // TAB 2: Manual Input processing
+  const handleValidateManualTab = () => {
+    const rawLines = manualText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    if (rawLines.length === 0) {
+      alert(lang === "ar" ? "يرجى كتابة أرقام الهواتف أولاً في المربع لتحليلها!" : "Please write phone numbers inside the text area first!");
+      return;
+    }
+
+    let validCount = 0;
+    let invalidCount = 0;
+    let dupCount = 0;
+    const newQueueItems: QueueItem[] = [];
+    const localInvalids: any[] = [];
+    const localDuplicates: any[] = [];
+    const seenInBatch = new Set<string>();
+
+    rawLines.forEach(raw => {
+      const res = normalizeIraqPhone(raw);
+      if (!res.isValid) {
+        invalidCount++;
+        localInvalids.push({ originalPhone: raw, source: "Manual", reason: res.reason });
+        return;
+      }
+
+      const dupInBatch = seenInBatch.has(res.normalized);
+      if (dupInBatch) {
+        dupCount++;
+        localDuplicates.push({ originalPhone: raw, normalizedPhone: res.normalized, source: "Manual" });
+        return;
+      }
+
+      seenInBatch.add(res.normalized);
+      validCount++;
+      newQueueItems.push({
+        id: `bulk_man_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        businessName: lang === "ar" ? "رقم يدوي" : "Manual Recipient",
+        originalPhone: raw,
+        normalizedPhone: res.normalized,
+        governorate: "Baghdad",
+        category: "General",
+        source: "manual",
+        status: res.needsReview ? "needs_review" : "ready",
+        note: res.needsReview ? res.reason : ""
+      });
+    });
+
+    setQueue(newQueueItems);
+    if (localInvalids.length > 0) setInvalidList(prev => [...localInvalids, ...prev]);
+    if (localDuplicates.length > 0) setDuplicateList(prev => [...localDuplicates, ...prev]);
+
+    setValidationSummary({
+      tab: "manual",
+      total: rawLines.length,
+      valid: validCount,
+      invalid: invalidCount,
+      duplicates: dupCount,
+      peek: newQueueItems.slice(0, 10).map(q => ({
+        name: q.businessName,
+        phone: q.normalizedPhone,
+        gov: q.governorate,
+        cat: q.category,
+        status: q.status
+      }))
+    });
+
+    appendConsoleLog(`Prepared Manual Campaign: ${validCount} phone numbers verified in queue.`);
+  };
+
+  // TAB 3: Full CSV Campaign processing
+  const handleValidateFullCsvTab = () => {
+    if (csvSourceRows.length === 0) {
+      alert(lang === "ar" ? "يرجى رفع ملف الـ CSV أولاً ليتم تحليله وفحصه!" : "Please upload a CSV file to begin analysis first!");
+      return;
+    }
+
+    let validCount = 0;
+    let invalidCount = 0;
+    let dupCount = 0;
+    const newQueueItems: QueueItem[] = [];
+    const localInvalids: any[] = [];
+    const localDuplicates: any[] = [];
+    const seenInBatch = new Set<string>();
+
+    csvSourceRows.forEach(row => {
+      const res = normalizeIraqPhone(row.rawPhone);
+      if (!res.isValid) {
+        invalidCount++;
+        localInvalids.push({ originalPhone: row.rawPhone || "[Empty]", source: "Full CSV", reason: res.reason });
+        return;
+      }
+
+      const dupInBatch = seenInBatch.has(res.normalized);
+      if (dupInBatch) {
+        dupCount++;
+        localDuplicates.push({ originalPhone: row.rawPhone, normalizedPhone: res.normalized, source: "Full CSV" });
+        return;
+      }
+
+      seenInBatch.add(res.normalized);
+      validCount++;
+      newQueueItems.push({
+        id: `bulk_csv_${Date.now()}_${Math.random().toString(36).substring(2, 7)}`,
+        businessName: row.businessName || "CSV Contact",
+        originalPhone: row.rawPhone,
+        normalizedPhone: res.normalized,
+        governorate: row.governorate || "Baghdad",
+        category: row.category || "General",
         source: "csv",
         status: res.needsReview ? "needs_review" : "ready",
         note: res.needsReview ? res.reason : ""
       });
     });
 
-    if (newItems.length > 0) setQueue(prev => [...prev, ...newItems]);
-    if (newInvalids.length > 0) setInvalidList(prev => [...newInvalids, ...prev]);
-    if (newDuplicates.length > 0) setDuplicateList(prev => [...newDuplicates, ...prev]);
+    setQueue(newQueueItems);
+    if (localInvalids.length > 0) setInvalidList(prev => [...localInvalids, ...prev]);
+    if (localDuplicates.length > 0) setDuplicateList(prev => [...localDuplicates, ...prev]);
 
-    alert(lang === "ar"
-      ? `تم إضافة أرقام الـ CSV المفلترة بنجاح! الصالحة: ${added} | المستبعدة: ${invs} | المكررة: ${dups}`
-      : `Imported filtered CSV records! Valid Added: ${added} | Rejected: ${invs} | Duplicates: ${dups}`
-    );
+    setValidationSummary({
+      tab: "csv",
+      total: csvSourceRows.length,
+      valid: validCount,
+      invalid: invalidCount,
+      duplicates: dupCount,
+      peek: newQueueItems.slice(0, 10).map(q => ({
+        name: q.businessName,
+        phone: q.normalizedPhone,
+        gov: q.governorate,
+        cat: q.category,
+        status: q.status
+      }))
+    });
 
-    setCsvSourceRows([]);
-    setCsvFileName("");
-    setShowCsvPreview(false);
+    appendConsoleLog(`Prepared Full CSV Campaign: Evaluated ${csvSourceRows.length} rows, found ${validCount} valid entries.`);
   };
 
-  // SENDING CONTROLS WORKERS
+  // DISPATCH TRANSMITTER CORE LOOP LOGIC
   const startSendingProcess = () => {
     if (isSendingActive && !sendingPaused) return;
     if (!messageText.trim()) {
-      alert(lang === "ar" ? "يرجى كتابة رسالة للبث أولاً!" : "Please write a draft outreach message first!");
+      alert(lang === "ar" ? "يرجى كتابة نص الرسالة أولاً!" : "Please write a draft outreach message first!");
       return;
     }
 
     const readyItems = queue.filter(q => q.status === "ready");
     if (readyItems.length === 0) {
-      alert(lang === "ar" ? "لا توجد أرقام بحالة 'جاهزة' للإرسال!" : "No records with 'Ready' status to send!");
+      alert(lang === "ar" 
+        ? "لا توجد أي أرقام بحالة 'جاهزة' للإرسال! اضغط 'معاينة وفحص' في الأعلى لملء طابور الجدولة أولاً." 
+        : "No contacts found with status 'Ready'! Please click 'Preview & Validate' above to populate the queue first."
+      );
       return;
     }
 
     setIsSendingActive(true);
     setSendingPaused(false);
-    appendConsoleLog("Starting high-speed bulk broadcasting service loop...");
+    appendConsoleLog("Initiating high-speed message transmission line...");
     setTimeout(() => dispatchNextRow(), 200);
   };
 
   const dispatchNextRow = async () => {
     const state = sendingRef.current;
     if (!state.isSendingActive || state.sendingPaused) {
-      appendConsoleLog("Broadcaster transmission paused.");
+      appendConsoleLog("Broadcast process paused.");
       return;
     }
 
-    // Find next "ready" item
+    // Isolate next queued item with ready status
     const targetIdx = state.queue.findIndex(q => q.status === "ready");
     if (targetIdx === -1) {
       setIsSendingActive(false);
       setActiveQueueIndex(null);
-      appendConsoleLog("✅ All ready messages have been successfully processed!");
+      appendConsoleLog("✅ Transmission Finished! All ready records evaluated.");
       return;
     }
 
     setActiveQueueIndex(targetIdx);
     const item = state.queue[targetIdx];
 
-    // Template variables binding
+    // Template binders
     const customMsg = messageText
       .replace(/{name}/g, item.businessName || "")
       .replace(/{governorate}/g, GOV_AR[item.governorate] || item.governorate)
       .replace(/{category}/g, item.category || "");
 
-    // Set sending state
+    // Mark as in-flight
     setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "sending" } : q));
-    appendConsoleLog(`Dispatching WA message to ${item.normalizedPhone}...`);
+    appendConsoleLog(`Sending payload to ${item.normalizedPhone}...`);
 
     try {
       const response = await fetch("/api/send", {
@@ -586,13 +623,13 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       const data = await response.json();
       if (response.ok) {
         setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "sent", note: data.response?.messageId || "Delivered" } : q));
-        appendConsoleLog(`🟢 Successfully sent to ${item.normalizedPhone}`);
+        appendConsoleLog(`🟢 Delivered safely to ${item.normalizedPhone}`);
       } else {
-        throw new Error(data.error || "Nabda Api Rejected");
+        throw new Error(data.error || "Nabda Host rejected");
       }
     } catch (err: any) {
       setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "failed", note: err.message || "Timeout" } : q));
-      appendConsoleLog(`🔴 Failed sending to ${item.normalizedPhone}: ${err.message}`);
+      appendConsoleLog(`🔴 Transmission Failed to ${item.normalizedPhone}: ${err.message}`);
     }
 
     setTimeout(() => dispatchNextRow(), delaySeconds * 1000);
@@ -600,12 +637,12 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
 
   const handlePause = () => {
     setSendingPaused(true);
-    appendConsoleLog("Broadcaster requested to Pause after current row finishes.");
+    appendConsoleLog("Requested pause. Transceiver will freeze after compiling the active row.");
   };
 
   const handleResume = () => {
     setSendingPaused(false);
-    appendConsoleLog("Resuming message transmitter...");
+    appendConsoleLog("Resuming active campaign...");
     setTimeout(() => dispatchNextRow(), 200);
   };
 
@@ -613,10 +650,10 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     setIsSendingActive(false);
     setSendingPaused(false);
     setActiveQueueIndex(null);
-    appendConsoleLog("🛑 Broadcast engine halted and reset.");
+    appendConsoleLog("⏹ Broadcast halted completely.");
   };
 
-  // EXPORTS HELPERS
+  // EXPORT AUDIT LOG FILES
   const triggerCSVDownload = (fileName: string, csvContent: string) => {
     const blob = new Blob([new Uint8Array([0xEF, 0xBB, 0xBF]), csvContent], { type: "text/csv;charset=utf-8" });
     const url = URL.createObjectURL(blob);
@@ -668,7 +705,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     triggerCSVDownload(`fairouzz_duplicates_${Date.now()}.csv`, content);
   };
 
-  // Queue View filtration
+  // Backstage viewer filtering rules
   const queueFiltered = queue.filter(item => {
     const matchGov = filterGov === "All" || item.governorate.toLowerCase() === filterGov.toLowerCase();
     const matchCat = filterCat === "All" || item.category === filterCat;
@@ -682,7 +719,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     return matchGov && matchCat && matchSrc && matchStatus && matchSearch;
   });
 
-  // Dynamic status counters
+  // Numeric tracking indices
   const totalInQueue = queue.length;
   const countSent = queue.filter(q => q.status === "sent").length;
   const countFailed = queue.filter(q => q.status === "failed").length;
@@ -694,8 +731,8 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   return (
     <div className={`space-y-6 ${lang === "ar" ? "rtl text-right font-sans" : "ltr text-left font-sans"}`}>
       
-      {/* Title Header */}
-      <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-slate-800 pb-5">
+      {/* Title Header with status display */}
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-5">
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
@@ -705,775 +742,946 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
           </div>
           <p className="text-xs text-slate-400 mt-1">
             {lang === "ar" 
-              ? "نظام مراسلة ذكي متكامل يدعم الإرسال حسب المحافظة، اللوائح اليدوية، ورفع ملفات Excel/CSV المتعددة" 
-              : "Advanced high-throughput segment broadcaster supporting Governorate target checklist, manual list normalizer, and multiple CSV files."}
+              ? "نظام مراسلة عسكري الدقة يدعم الحملات الموجهة للمحافظات، اللوائح اليدوية الارتجالية، واستيراد ملفات الـ Excel/CSV الكلية." 
+              : "Advanced military-grade broadcasting pipeline supporting localized governorate targeting, arbitrary copy-paste strings, or entire raw spreadsheets."}
           </p>
         </div>
 
+        <div className="flex items-center gap-2">
+          {/* Nabda Channel Integrations Banner */}
+          <div className="flex items-center gap-1.5 text-xs">
+            {nabdaStatus === "testing" && (
+              <span className="text-slate-400 font-mono animate-pulse text-[11px] bg-slate-800 px-2 py-1 rounded">Testing line...</span>
+            )}
+            {nabdaStatus === "connected" && (
+              <span className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 text-[11px]">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
+                {lang === "ar" ? "متصل ببوابة النبضة" : "Active Port: Nabda"}
+              </span>
+            )}
+            {nabdaStatus === "error" && (
+              <span className="flex items-center gap-1 text-red-400 font-bold bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 text-[11px]" title={nabdaErrorDetails}>
+                ⚠️ {lang === "ar" ? "خطأ اتصال" : "Nabda Port Error"}
+              </span>
+            )}
+          </div>
+
+          <button
+            onClick={() => {
+              if (window.confirm(lang === "ar" ? "هل أنت متأكد من مسح قائمة الانتظار الحالية وسجلات المسارات؟" : "Are you sure you want to clear the active candidate queue?")) {
+                setQueue([]);
+                setValidationSummary(null);
+                appendConsoleLog("Operations ledger cleared.");
+              }
+            }}
+            className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
+            title={lang === "ar" ? "تصفير الطابور" : "Purge operational pipeline"}
+          >
+            <Trash2 size={13} />
+            <span>{lang === "ar" ? "تفريغ الطابور" : "Purge Queue"}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* 3-Tab Navigator Panel */}
+      <div className="bg-[#12141a] p-1.5 rounded-2xl border border-slate-800/80 max-w-2xl mx-auto flex gap-1">
         <button
-          onClick={() => {
-            if (window.confirm(lang === "ar" ? "هل أنت متأكد من مسح جميع اللوائح والطوابير؟" : "Are you sure you want to purge the queue?")) {
-              setQueue([]);
-              setInvalidList([]);
-              setDuplicateList([]);
-              appendConsoleLog("Cleared queue, duplicates, and invalid datastores.");
-            }
-          }}
-          className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-semibold px-4 py-2 rounded-xl transition flex items-center gap-1.5 cursor-pointer"
+          onClick={() => setActiveTab("gov")}
+          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === "gov" 
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/15" 
+              : "text-slate-400 hover:text-white hover:bg-slate-800/30"
+          }`}
         >
-          <Trash2 size={13} />
-          {lang === "ar" ? "تفريغ الطابور كلياً" : "Purge Queue"}
+          <Building2 size={14} />
+          <span>{lang === "ar" ? "1. حملة المحافظات" : "1. Governorate Campaign"}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("manual")}
+          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === "manual" 
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/15" 
+              : "text-slate-400 hover:text-white hover:bg-slate-800/30"
+          }`}
+        >
+          <Phone size={14} />
+          <span>{lang === "ar" ? "2. أرقام يدوية" : "2. Manual Phone Numbers"}</span>
+        </button>
+
+        <button
+          onClick={() => setActiveTab("csv")}
+          className={`flex-1 py-3 px-4 rounded-xl text-xs font-bold transition-all flex items-center justify-center gap-1.5 cursor-pointer ${
+            activeTab === "csv" 
+              ? "bg-indigo-600 text-white shadow-md shadow-indigo-600/15" 
+              : "text-slate-400 hover:text-white hover:bg-slate-800/30"
+          }`}
+        >
+          <FileSpreadsheet size={14} />
+          <span>{lang === "ar" ? "3. حملة CSV الكاملة" : "3. Full CSV Campaign"}</span>
         </button>
       </div>
 
-      {/* Grid containing Composer, Governorate, Manual, CSV blocks */}
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-
-        {/* 1. MESSAGE COMPOSER */}
-        <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl space-y-4 shadow-xl">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <Sparkles className="text-indigo-400" size={16} />
-              <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                {lang === "ar" ? "1. مصنف ومؤلف الرسالة" : "1. Message Composer"}
-              </h2>
+      {/* Main Container Card */}
+      <div className="bg-[#14171D] border border-[#2D3139] rounded-2xl shadow-xl overflow-hidden p-5 md:p-6 space-y-6">
+        
+        {/* TAB 1: Governorate Campaign Layout Content */}
+        {activeTab === "gov" && (
+          <div className="space-y-6">
+            {/* Helper Text banner explanation */}
+            <div className="bg-indigo-500/5 border border-indigo-505/10 rounded-xl p-4 flex gap-3 text-slate-300">
+              <Sparkles size={18} className="text-indigo-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-xs font-extrabold text-indigo-400 uppercase tracking-widest">
+                  {lang === "ar" ? "🎯 دليل الاستخدام: حملات المحافظات المستهدفة" : "🎯 Campaign Guide: Governorate-Targeted Broadcaster"}
+                </h3>
+                <p className="text-[11px] leading-relaxed text-slate-300">
+                  {lang === "ar" 
+                    ? "اختر هذا الوضع عندما تريد تصفية المتلقين حسب محافظات محددة في العراق. يمكنك إما رفع ورقة ملف CSV وسيقوم النظام بفرزها تلقائياً، أو ترك ميزة رفع الملفات فارغة ليقوم الخادم بسحب وتصفية التجار تلقائياً وبشكل حصري من قاعدة بيانات الـ CRM المركزية المسجلين لديك للحصول على سرعة إطلاق فائقة!" 
+                    : "Select this mode when you want to target recipients from specific structural governorates in Iraq. You can upload a custom CSV file to parse matches, or leave the upload blank to automatically extract matching businesses registered inside your unified CRM database."}
+                </p>
+              </div>
             </div>
-            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded font-mono font-bold uppercase">
-              {lang === "ar" ? "يدعم التخصيص" : "Templated"}
-            </span>
-          </div>
 
-          <p className="text-xs text-slate-400 leading-relaxed">
-            {lang === "ar" 
-              ? "اكتب رسالتك للمستلمين. المتغيرات المتاحة للاستبدال الآلي لكل مستلم: {name} (الاسم التجاري)، {governorate} (المحافظة)، {category} (التصنيف التجاري)."
-              : "Compose message body. Custom tags replace dynamically on send: {name} (Business Name), {governorate} (Governorate), {category} (Category)."}
-          </p>
-
-          <textarea
-            value={messageText}
-            onChange={(e) => setMessageText(e.target.value)}
-            rows={4}
-            className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded-xl p-3 text-xs text-white focus:outline-none focus:border-indigo-500 transition font-mono"
-            placeholder={lang === "ar" ? "اكتب دعايتك هنا..." : "Compose your advertising message copy here..."}
-          />
-        </div>
-
-        {/* 2. SEND BY GOVERNORATE */}
-        <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl space-y-4 shadow-xl">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <Building2 className="text-emerald-400" size={16} />
-              <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                {lang === "ar" ? "2. الإرسال حسب المحافظة العِراقية" : "2. Send by Governorate"}
-              </h2>
-            </div>
-            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded font-bold font-mono">
-              CRM DATABASE
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-400 leading-relaxed">
-            {lang === "ar" 
-              ? "اختر واحدة أو أكثر من المحافظات لإضافة جميع التجار المسجلين وتصفيتهم في طابور الإرسال تلقائياً طبقاً للمحافظة المحددة."
-              : "Select one or multiple Iraqi governorates. Only CRM businesses located strictly in the checked provinces enter queue."}
-          </p>
-
-          {/* Governorates grid checkboxes */}
-          <div className="grid grid-cols-2 md:grid-cols-3 gap-2.5 max-h-[140px] overflow-y-auto pr-1 border border-slate-800/80 p-2.5 rounded-xl bg-[#0A0B0E]">
-            {IRAQ_GOVERNORATES.map(gov => {
-              const currentCount = getCrmCountByGov(gov);
-              const isChecked = selectedGovernorates.includes(gov);
-              return (
-                <label 
-                  key={gov} 
-                  className={`flex items-center gap-2 cursor-pointer p-1 rounded-lg transition-colors select-none ${isChecked ? "bg-indigo-500/5" : "hover:bg-slate-800/40"}`}
-                >
-                  <input
-                    type="checkbox"
-                    checked={isChecked}
-                    onChange={(e) => {
-                      if (e.target.checked) setSelectedGovernorates(prev => [...prev, gov]);
-                      else setSelectedGovernorates(prev => prev.filter(g => g !== gov));
-                    }}
-                    className="accent-indigo-500 w-3.5 h-3.5 rounded"
-                  />
-                  <div className="text-[11px] leading-tight">
-                    <span className="text-white font-semibold">{lang === "ar" ? GOV_AR[gov] : gov}</span>
-                    <span className="text-slate-400 text-[10px] block font-mono">({currentCount} found)</span>
+            {/* Steps Workflow List */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Left Column: Data Import Step (Step 1 & 2) */}
+              <div className="space-y-5">
+                
+                {/* STEP 1: CSV Upload Selector */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">1</span>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      {lang === "ar" ? "الخطوة الأولى: رفع ورقة العمل (اختياري)" : "Step 1: Upload Contact Spreadsheet (Optional)"}
+                    </label>
                   </div>
-                </label>
-              );
-            })}
-          </div>
 
-          <div className="flex gap-2.5">
-            <button
-              onClick={() => setSelectedGovernorates(IRAQ_GOVERNORATES)}
-              className="bg-slate-800 hover:bg-slate-750 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
-            >
-              {lang === "ar" ? "تحديد الكل" : "Select All"}
-            </button>
-            <button
-              onClick={() => setSelectedGovernorates([])}
-              className="bg-slate-800 hover:bg-slate-750 text-white text-[11px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer"
-            >
-              {lang === "ar" ? "إلغاء الكل" : "Deselect All"}
-            </button>
-            <button
-              onClick={() => setShowGovPreview(!showGovPreview)}
-              className="border border-slate-700 hover:bg-slate-800 text-slate-250 text-[11px] font-bold px-3 py-1.5 rounded-lg transition cursor-pointer ml-auto"
-            >
-              {lang === "ar" ? "معاينة المطابقة" : "Preview Selected"}
-            </button>
-            <button
-              onClick={handleAddGovernorateContactsToQueue}
-              className="bg-emerald-500/10 hover:bg-emerald-500/20 border border-emerald-500/20 text-emerald-400 text-[11px] font-bold px-4 py-1.5 rounded-lg transition cursor-pointer"
-            >
-              {lang === "ar" ? "إضافة المستهدفة للطابور" : "Add Matches to Queue"}
-            </button>
-          </div>
-
-          {/* Interactive Preview sub-card */}
-          {showGovPreview && (
-            <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3 space-y-2">
-              <span className="text-[10px] text-slate-400 font-bold block uppercase">
-                {lang === "ar" ? `التجار المطابقين للمحافظات المحددة (${matchedCrmContacts.length}):` : `Matched selected governorate accounts (${matchedCrmContacts.length}):`}
-              </span>
-              <div className="max-h-[110px] overflow-y-auto space-y-1 pr-1 text-[11px]">
-                {matchedCrmContacts.length === 0 ? (
-                  <p className="text-slate-500 italic text-center p-2">No accounts matched current filter.</p>
-                ) : (
-                  matchedCrmContacts.map((c, idx) => (
-                    <div key={idx} className="flex justify-between border-b border-slate-900 pb-1 text-slate-350">
-                      <span>• {c.businessName}</span>
-                      <span className="font-mono text-indigo-400">{c.phone} ({lang === "ar" ? GOV_AR[c.governorate] : c.governorate})</span>
+                  {!csvFileName ? (
+                    <div className="border border-dashed border-[#2D3139] bg-[#0A0B0E]/60 rounded-xl p-6 text-center hover:border-indigo-500 transition cursor-pointer relative group">
+                      <input
+                        type="file"
+                        accept=".csv"
+                        multiple
+                        onChange={handleCSVMultiUpload}
+                        className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                      />
+                      <div className="space-y-2 pointer-events-none">
+                        <UploadCloud size={20} className="text-indigo-400 mx-auto" />
+                        <p className="text-xs font-bold text-white">
+                          {lang === "ar" ? "انقر أو اسحب ملف الـ CSV هنا" : "Upload spreadsheet records here"}
+                        </p>
+                        <p className="text-[10px] text-slate-500">
+                          {lang === "ar" ? "الاسم، الهاتف، المحافظة، التصنيف" : "Auto-detects Name, Phone, Governorate tags"}
+                        </p>
+                      </div>
                     </div>
-                  ))
+                  ) : (
+                    <div className="bg-[#090b0e] border border-emerald-500/20 p-4 rounded-xl flex items-center justify-between">
+                      <div className="flex items-center gap-2.5 text-xs text-white">
+                        <CheckCircle2 size={16} className="text-emerald-400" />
+                        <div className="font-mono">
+                          <p className="font-bold max-w-[200px] truncate">{csvFileName}</p>
+                          <p className="text-[10px] text-slate-400">{csvSourceRows.length} {lang === "ar" ? "سجل مكتشف" : "records parsed"}</p>
+                        </div>
+                      </div>
+
+                      <button
+                        onClick={() => {
+                          setCsvFileName("");
+                          setCsvSourceRows([]);
+                        }}
+                        className="text-slate-400 hover:text-red-405 transition text-xs flex items-center gap-1 cursor-pointer"
+                      >
+                        <Trash2 size={13} />
+                        <span>{lang === "ar" ? "حذف" : "Remove"}</span>
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* STEP 2: Governorate selection Checkboxes */}
+                <div className="space-y-2.5">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-2">
+                      <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">2</span>
+                      <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                        {lang === "ar" ? "الخطوة الثانية: حدد المحافظات المستهدفة" : "Step 2: Select Target Governorates"}
+                      </label>
+                    </div>
+
+                    <div className="flex gap-1">
+                      <button
+                        onClick={() => setSelectedGovernorates(IRAQ_GOVERNORATES)}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-750 text-white font-semibold px-2 py-0.5 rounded transition cursor-pointer"
+                      >
+                        {lang === "ar" ? "الكل" : "All"}
+                      </button>
+                      <button
+                        onClick={() => setSelectedGovernorates([])}
+                        className="text-[10px] bg-slate-800 hover:bg-slate-750 text-white font-semibold px-2 py-0.5 rounded transition cursor-pointer"
+                      >
+                        {lang === "ar" ? "إلغاء" : "Clear"}
+                      </button>
+                    </div>
+                  </div>
+
+                  <div className="grid grid-cols-2 shadow-inner border border-slate-800 bg-[#0A0B0E] max-h-[160px] overflow-y-auto p-3 rounded-xl gap-2 text-xs">
+                    {IRAQ_GOVERNORATES.map(gov => {
+                      const isChecked = selectedGovernorates.includes(gov);
+                      const currentCount = getCrmCountByGov(gov);
+                      return (
+                        <label 
+                          key={gov} 
+                          className={`flex items-center gap-2 cursor-pointer p-1.5 rounded-lg transition-all select-none ${
+                            isChecked ? "bg-indigo-500/5 text-white" : "text-slate-400 hover:bg-slate-850/40"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isChecked}
+                            onChange={(e) => {
+                              if (e.target.checked) setSelectedGovernorates(prev => [...prev, gov]);
+                              else setSelectedGovernorates(prev => prev.filter(g => g !== gov));
+                            }}
+                            className="accent-indigo-500 w-3.5 h-3.5"
+                          />
+                          <div className="text-[11px] leading-tight">
+                            <span className="font-bold">{lang === "ar" ? GOV_AR[gov] : gov}</span>
+                            {!csvFileName && <span className="text-slate-500 block text-[9px] font-mono">({currentCount} central CRM)</span>}
+                          </div>
+                        </label>
+                      );
+                    })}
+                  </div>
+                </div>
+
+              </div>
+
+              {/* Right Column: Message Composer (Step 3) */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">3</span>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      {lang === "ar" ? "الخطوة الثالثة: صياغة قالب الرسالة" : "Step 3: Message Template Composer"}
+                    </label>
+                  </div>
+                  <span className="text-[10px] text-indigo-400 font-bold bg-indigo-500/5 px-2 py-0.5 rounded font-mono uppercase">
+                    Variables OK
+                  </span>
+                </div>
+
+                <div className="bg-[#0A0B0E] border border-slate-800 p-4 rounded-xl space-y-3.5 shadow-inner">
+                  <textarea
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    rows={4}
+                    className="w-full bg-[#12141a] border border-[#2D3139] rounded-lg p-3 text-xs text-white focus:outline-none focus:border-indigo-500 transition font-mono leading-relaxed resize-none"
+                    placeholder={lang === "ar" ? "اكتب دعايتك هنا..." : "Compose your advertising message copy here..."}
+                  />
+
+                  {/* Character stats & tag helpers */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-1.5 flex-wrap">
+                      <span className="font-bold">{lang === "ar" ? "اضغط لإدراج متغير:" : "Insert tags:"}</span>
+                      <button
+                        onClick={() => setMessageText(t => t + " {name}")}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded font-mono select-none cursor-pointer"
+                      >
+                        {lang === "ar" ? "الاسم" : "{name}"}
+                      </button>
+                      <button
+                        onClick={() => setMessageText(t => t + " {governorate}")}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded font-mono select-none cursor-pointer"
+                      >
+                        {lang === "ar" ? "المحافظة" : "{governorate}"}
+                      </button>
+                      <button
+                        onClick={() => setMessageText(t => t + " {category}")}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded font-mono select-none cursor-pointer"
+                      >
+                        {lang === "ar" ? "القسم" : "{category}"}
+                      </button>
+                    </div>
+
+                    <span className="font-mono text-indigo-400 font-bold">{messageText.length} chars</span>
+                  </div>
+                </div>
+
+                {/* Validation Trigger Button */}
+                <button
+                  onClick={handleValidateGovTab}
+                  className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10 cursor-pointer"
+                >
+                  <Sparkles size={14} />
+                  <span>{lang === "ar" ? "🔍 معاينة وفحص أرقام المحافظات" : "🔍 Preview & Validate Campaign"}</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* TAB 2: Manual Phone Numbers Layout Content */}
+        {activeTab === "manual" && (
+          <div className="space-y-6">
+            {/* Helper Text banner explanation */}
+            <div className="bg-indigo-500/5 border border-indigo-505/10 rounded-xl p-4 flex gap-3 text-slate-300">
+              <Phone size={18} className="text-sky-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-xs font-extrabold text-sky-400 uppercase tracking-widest">
+                  {lang === "ar" ? "📋 دليل الاستخدام: لوائح الإلصاق اليدوي السريع" : "📋 Campaign Guide: Manual Text Area Broadcaster"}
+                </h3>
+                <p className="text-[11px] leading-relaxed text-slate-300">
+                  {lang === "ar" 
+                    ? "اختر هذا الوضع عندما ترغب في نسخ قائمة أرقام من مفكرة أو تطبيق خارجي ولصقها هنا لسرعة الإرسال الفوري. يدعم النظام كتابة الأرقام بكل الصيغ (مع أو بدون مفتاح وبفواصل متنوعة أو أسطر جديدة) وسيجري تلقائياً تصحيحها للتنسيق التجاري العراقي الصياغة وتنقية المتكرر وحذف الزوائد والرموز الخاطئة." 
+                    : "Select this mode when you want to paste a custom list of phone numbers directly. The normalizer system handles Iraqi formats recursively (converting local 077... or arbitrary strings to standard international formats) and filters out duplicate rows instantly."}
+                </p>
+              </div>
+            </div>
+
+            {/* Workflow steps layout */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Left Column: STEP 1: Textarea box */}
+              <div className="space-y-3">
+                <div className="flex items-center gap-2 pb-1">
+                  <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">1</span>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    {lang === "ar" ? "الخطوة الأولى: الصق الهواتف المستهدفة" : "Step 1: Paste Target Numbers"}
+                  </label>
+                </div>
+
+                <div className="bg-[#0A0B0E] p-3 border border-slate-800 rounded-xl">
+                  <textarea
+                    value={manualText}
+                    onChange={(e) => setManualText(e.target.value)}
+                    rows={7}
+                    className="w-full bg-[#12141a] border border-[#2D3139] rounded-lg p-3 text-xs text-white focus:outline-none focus:border-sky-500 transition font-mono leading-relaxed"
+                    placeholder={`0770xxxxxxx\n0780xxxxxxx\n+964790xxxxxxx\n750xxxxxxx, 0771xxxxxxx`}
+                  />
+                  <div className="flex justify-between items-center text-[10px] text-slate-500 pt-2 font-mono">
+                    <span>{lang === "ar" ? "يدعم سطر جديد، فاصلة، أو منقوطة" : "Supports newlines, commas, semicolons"}</span>
+                    <span>{manualText.split(/[\n,;]+/).filter(Boolean).length} {lang === "ar" ? "أرقام مدخلة" : "lines typed"}</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Right Column: STEP 2: Composer */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">2</span>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      {lang === "ar" ? "الخطوة الثانية: صياغة الرسالة" : "Step 2: Message Composer"}
+                    </label>
+                  </div>
+                </div>
+
+                <div className="bg-[#0A0B0E] border border-slate-800 p-4 rounded-xl space-y-3.5 shadow-inner">
+                  <textarea
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    rows={4}
+                    className="w-full bg-[#12141a] border border-[#2D3139] rounded-lg p-3 text-xs text-white focus:outline-none focus:border-indigo-500 transition font-mono leading-relaxed resize-none"
+                    placeholder={lang === "ar" ? "مرحباً بكم..." : "Write message..."}
+                  />
+
+                  {/* Character stats & tag helpers */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-[10px] text-slate-400">
+                    <span className="italic">{lang === "ar" ? "ملاحظة: يمكنك استخدام {name} للرسائل المخصصة كإسم افتراضي يكتب تاجر يدوي" : "Note: Tags like {name} will render as Manual Recipient"}</span>
+                    <span className="font-mono text-indigo-400 font-bold">{messageText.length} chars</span>
+                  </div>
+                </div>
+
+                {/* Validation trigger */}
+                <button
+                  onClick={handleValidateManualTab}
+                  className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10 cursor-pointer"
+                >
+                  <Sparkles size={14} />
+                  <span>{lang === "ar" ? "🔍 معاينة وفحص قائمة الأرقام" : "🔍 Preview & Validate List"}</span>
+                </button>
+              </div>
+
+            </div>
+          </div>
+        )}
+
+        {/* TAB 3: Full CSV Campaign Layout Content */}
+        {activeTab === "csv" && (
+          <div className="space-y-6">
+            {/* Helper Text banner explanation */}
+            <div className="bg-indigo-500/5 border border-indigo-505/10 rounded-xl p-4 flex gap-3 text-slate-300">
+              <FileSpreadsheet size={18} className="text-emerald-400 shrink-0 mt-0.5" />
+              <div className="space-y-1">
+                <h3 className="text-xs font-extrabold text-emerald-400 uppercase tracking-widest">
+                  {lang === "ar" ? "📂 دليل الاستخدام: حملات ملفات الـ CSV الكاملة" : "📂 Campaign Guide: Full CSV File Broadcaster"}
+                </h3>
+                <p className="text-[11px] leading-relaxed text-slate-300">
+                  {lang === "ar" 
+                    ? "اختر هذا الوضع لرفع ملف Excel/CSV واستيراد كامل قاعدة أرقام الهواتف التابعة له مباشرة لإطلاق البث دون تطبيق أي تصفية تابعة للمحافظات أو شروط أخرى. سيقودك معالج السحب لتغطية جميع التجار المسجلين في الورقة المرفقة بكل سهولة وسرعة." 
+                    : "Select this mode to load a spreadsheet and target all valid phone numbers inside it unconditionally, ignoring any governorate filters. Fast column mapping logic automatically detects contacts and groups them in absolute integrity."}
+                </p>
+              </div>
+            </div>
+
+            {/* Steps layout */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              
+              {/* Left Column: STEP 1: CSV Upload */}
+              <div className="space-y-4">
+                <div className="flex items-center gap-2 pb-1">
+                  <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">1</span>
+                  <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                    {lang === "ar" ? "الخطوة الأولى: ارفع ملف الـ CSV" : "Step 1: Upload CSV Database file"}
+                  </label>
+                </div>
+
+                {!csvFileName ? (
+                  <div className="border-2 border-dashed border-[#2D3139] bg-[#0A0B0E]/60 rounded-xl p-9 text-center hover:border-indigo-500 transition cursor-pointer relative group">
+                    <input
+                      type="file"
+                      accept=".csv"
+                      multiple
+                      onChange={handleCSVMultiUpload}
+                      className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
+                    />
+                    <div className="space-y-2 pointer-events-none font-sans">
+                      <UploadCloud size={24} className="text-indigo-400 mx-auto" />
+                      <p className="text-xs font-bold text-white">
+                        {lang === "ar" ? "انقر أو اسحب ملفات الـ CSV هنا" : "Upload one or multiple CSV sheets"}
+                      </p>
+                      <p className="text-[10px] text-slate-400 leading-tight">
+                        {lang === "ar" ? "الاسم، الهاتف، المحافظة، التصنيف" : "Supports Name, Phone, Governorate, and Classification fields"}
+                      </p>
+                    </div>
+                  </div>
+                ) : (
+                  <div className="bg-[#090b0e] border border-emerald-500/20 p-4 rounded-xl flex items-center justify-between">
+                    <div className="flex items-center gap-2.5 text-xs text-white">
+                      <CheckCircle2 size={16} className="text-emerald-400" />
+                      <div className="font-mono">
+                        <p className="font-bold max-w-[200px] truncate">{csvFileName}</p>
+                        <p className="text-[10px] text-slate-400">{csvSourceRows.length} {lang === "ar" ? "سجل مكتشف" : "records parsed"}</p>
+                      </div>
+                    </div>
+
+                    <button
+                      onClick={() => {
+                        setCsvFileName("");
+                        setCsvSourceRows([]);
+                      }}
+                      className="text-slate-400 hover:text-red-405 transition text-xs flex items-center gap-1 cursor-pointer"
+                    >
+                      <Trash2 size={13} />
+                      <span>{lang === "ar" ? "حذف" : "Remove"}</span>
+                    </button>
+                  </div>
                 )}
               </div>
-            </div>
-          )}
-        </div>
 
-        {/* 3. HARD MANUAL PHONE LISTS */}
-        <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl space-y-4 shadow-xl">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <Phone className="text-sky-400" size={16} />
-              <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                {lang === "ar" ? "3. اللائحة اليدوية للأرقام والفرز التلقائي" : "3. Manual Phone Numbers List"}
-              </h2>
-            </div>
-            <span className="text-[10px] bg-sky-500/10 text-sky-400 px-2.5 py-0.5 rounded font-mono font-bold uppercase">
-              Normalizer
-            </span>
-          </div>
-
-          <p className="text-xs text-slate-400 leading-relaxed">
-            {lang === "ar" 
-              ? "الصق قوائم الأرقام هنا، يدعم الفصل بالفاصلة أو سطر جديد. سيقوم النظام بـ توحيد التنسيق العراقي وتنقية المتكرر تلقائياً."
-              : "Paste arbitrary phone numbers here, one per line or comma separated. System auto-converts to +9647XXXXXXXXX and isolates duplicates."}
-          </p>
-
-          <textarea
-            value={manualText}
-            onChange={(e) => setManualText(e.target.value)}
-            rows={3}
-            className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded-xl p-3 text-xs text-white focus:outline-none focus:border-sky-500 transition font-mono"
-            placeholder={`07801234567\n+9647801234567\n9647801234567\n7801234567`}
-          />
-
-          <button
-            onClick={handleAnalyzeAndAddManual}
-            className="w-full bg-sky-500/10 hover:bg-sky-500/20 border border-sky-500/20 text-sky-400 text-xs font-bold py-2.5 rounded-xl transition cursor-pointer flex items-center justify-center gap-2"
-          >
-            <Plus size={14} />
-            {lang === "ar" ? "فرز وتثبيت الأرقام والاضافة مباشرة" : "Add Numbers To Queue"}
-          </button>
-
-          {/* Analysis Audit Breakdown Table */}
-          {analysisResult && (
-            <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3.5 space-y-2 text-[11px]">
-              <span className="text-[10px] text-slate-400 font-bold uppercase block tracking-wider border-b border-slate-800 pb-1 mb-2">
-                📋 Dynamic Parsing Analyzer Result:
-              </span>
-              <div className="grid grid-cols-3 gap-2 text-center text-[10px]">
-                <div className="bg-emerald-500/5 border border-emerald-500/10 p-2 rounded-lg">
-                  <p className="text-emerald-400 font-bold text-xs">{analysisResult.valid.length}</p>
-                  <p className="text-slate-450 mt-0.5">Valid Loaded</p>
-                </div>
-                <div className="bg-red-500/5 border border-red-500/10 p-2 rounded-lg">
-                  <p className="text-red-400 font-bold text-xs">{analysisResult.invalid.length}</p>
-                  <p className="text-slate-455 mt-0.5">Invalids Found</p>
-                </div>
-                <div className="bg-indigo-500/5 border border-indigo-500/10 p-2 rounded-lg">
-                  <p className="text-indigo-400 font-bold text-xs">{analysisResult.duplicates.length}</p>
-                  <p className="text-slate-460 mt-0.5">Dups Isolated</p>
-                </div>
-              </div>
-
-              {/* Expander tables for invalid entries */}
-              {analysisResult.invalid.length > 0 && (
-                <div className="space-y-1">
-                  <span className="text-[10px] text-red-400 font-bold">Rejected Invalids:</span>
-                  <div className="bg-black/40 p-2 rounded max-h-[80px] overflow-y-auto text-[10px] text-red-350 font-mono space-y-0.5">
-                    {analysisResult.invalid.map((inv, idx) => (
-                      <div key={idx}>• &quot;{inv.raw}&quot; ➔ {inv.reason}</div>
-                    ))}
+              {/* Right Column: STEP 2: Composer */}
+              <div className="space-y-4">
+                <div className="flex items-center justify-between pb-1">
+                  <div className="flex items-center gap-2">
+                    <span className="w-5 h-5 rounded-full bg-slate-850 border border-slate-700 text-white font-mono text-[10px] flex items-center justify-center font-bold">2</span>
+                    <label className="text-xs font-bold text-slate-300 uppercase tracking-wider">
+                      {lang === "ar" ? "الخطوة الثانية: صياغة الرسالة المنوطة" : "Step 2: Message Builder"}
+                    </label>
                   </div>
                 </div>
-              )}
-            </div>
-          )}
-        </div>
 
-        {/* 4. CSV MULTI-UPLOAD AND FILTER SEGMENTATION */}
-        <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl space-y-4 shadow-xl">
-          <div className="flex items-center justify-between pb-3 border-b border-slate-800">
-            <div className="flex items-center gap-2">
-              <UploadCloud className="text-indigo-400" size={16} />
-              <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-                {lang === "ar" ? "4. استيراد ملفات CSV وتصفيتها" : "4. CSV Upload & Filtering"}
-              </h2>
-            </div>
-            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 px-2.5 py-0.5 rounded font-mono font-bold uppercase">
-              Advanced CSV
-            </span>
-          </div>
+                <div className="bg-[#0A0B0E] border border-slate-800 p-4 rounded-xl space-y-3.5 shadow-inner">
+                  <textarea
+                    value={messageText}
+                    onChange={(e) => setMessageText(e.target.value)}
+                    rows={4}
+                    className="w-full bg-[#12141a] border border-[#2D3139] rounded-lg p-3 text-xs text-white focus:outline-none focus:border-indigo-500 transition font-mono leading-relaxed resize-none"
+                    placeholder={lang === "ar" ? "اكتب دعايتك هنا..." : "Compose your advertising message copy here..."}
+                  />
 
-          <p className="text-xs text-slate-400 leading-relaxed">
-            {lang === "ar" 
-              ? "ارفع ملفاً أو ملفات CSV متعددة. سيقوم النظام بقراءة الأعمدة تلقائياً (الاسم، الهاتف، المحافظة، والنوع)، وتحديد ما يضاف حسب رغبتك."
-              : "Upload one or multiple CSV sheets. System auto-detects column maps. Filter per-governorate from the check boxes before adding."}
-          </p>
+                  {/* Character stats & tag helpers */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-[10px] text-slate-400">
+                    <div className="flex items-center gap-1.5 flex-wrap font-sans">
+                      <span className="font-bold">{lang === "ar" ? "إدراج متغير:" : "Insert tags:"}</span>
+                      <button
+                        onClick={() => setMessageText(t => t + " {name}")}
+                        className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-1.5 py-0.5 rounded font-mono select-none"
+                      >
+                        {lang === "ar" ? "الاسم" : "{name}"}
+                      </button>
+                    </div>
 
-          <div className="border-2 border-dashed border-[#2D3139] hover:border-indigo-500 bg-[#0A0B0E]/60 rounded-xl p-5 text-center transition cursor-pointer relative group">
-            <input
-              type="file"
-              accept=".csv"
-              multiple
-              onChange={handleCSVMultiUpload}
-              className="absolute inset-0 opacity-0 w-full h-full cursor-pointer z-10"
-            />
-            <div className="space-y-1 pointer-events-none">
-              <UploadCloud size={20} className="text-indigo-400 mx-auto" />
-              <p className="text-xs font-bold text-white">
-                {csvFileName || (lang === "ar" ? "انقر أو اسحب ملفات الـ CSV هنا" : "Upload one or multiple CSV cards")}
-              </p>
-              <p className="text-[10px] text-slate-400">
-                {lang === "ar" ? "الاسم، الهاتف، المحافظة، التصنيف" : "Supports Name, Phone, Governorate, and Business classification fields"}
-              </p>
-            </div>
-          </div>
+                    <span className="font-mono text-indigo-400 font-bold">{messageText.length} chars</span>
+                  </div>
+                </div>
 
-          {/* Expanded filtering inside the CSV section itself! */}
-          {csvSourceRows.length > 0 && (
-            <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3.5 space-y-3.5">
-              <div className="border-b border-slate-800 pb-1.5 flex justify-between items-center">
-                <span className="text-[11px] font-bold text-indigo-400">⚙️ CSV Import Live Filtering Segment:</span>
-                <span className="text-[10px] text-slate-400 font-mono">Matched: {csvFilteredRows.length} / {csvSourceRows.length}</span>
+                {/* Validation triggers */}
+                <button
+                  onClick={handleValidateFullCsvTab}
+                  className="w-full py-3.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-extrabold transition duration-200 flex items-center justify-center gap-2 shadow-lg shadow-indigo-600/10 cursor-pointer"
+                >
+                  <Sparkles size={14} />
+                  <span>{lang === "ar" ? "🔍 معاينة وفحص ملف الـ CSV بالكامل" : "🔍 Preview & Validate File"}</span>
+                </button>
               </div>
 
-              {/* Dynamic Category detection */}
-              <div className="space-y-1 text-[11px]">
-                <span className="text-slate-400">Filter Category mapping within CSV:</span>
-                <select
-                  value={csvSelectedCategory}
-                  onChange={(e) => setCsvSelectedCategory(e.target.value)}
-                  className="w-full bg-[#14171D] border border-[#2D3139] rounded p-1.5 text-white text-[11px]"
-                >
-                  <option value="All">🌐 All Categories detected ({Array.from(new Set(csvSourceRows.map(r => r.category))).length})</option>
-                  {Array.from(new Set(csvSourceRows.map(r => r.category))).filter(Boolean).map(cat => (
-                    <option key={cat} value={cat}>{cat}</option>
+            </div>
+          </div>
+        )}
+
+        {/* STEP 4: INTERACTIVE VALIDATION DISPLAY BANNER */}
+        {validationSummary && (
+          <div className="border border-slate-800 bg-[#0c0e12] rounded-2xl p-5 md:p-6 space-y-4 shadow-xl select-none font-sans animate-fadeIn">
+            
+            {/* Header and stats */}
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
+              <div>
+                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider block w-fit mb-1">
+                  {lang === "ar" ? "تم التحليل والتحقق من التنسيق" : "Verification Complete"}
+                </span>
+                <h3 className="text-sm font-extrabold text-white">
+                  {lang === "ar" ? "📑 تقرير تدقيق وتثبيت الملف" : "📑 Dynamic Dataset Audit Report"}
+                </h3>
+              </div>
+
+              {validationSummary.isCrmFallback && (
+                <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded-full font-bold">
+                  {lang === "ar" ? "💡 مسترجع تلقائياً من الـ CRM" : "💡 CRM Central Auto-loaded"}
+                </span>
+              )}
+            </div>
+
+            {/* Statistical grid breakdown */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+              <div className="bg-[#12141a]/60 border border-slate-800/80 p-3.5 rounded-xl text-center">
+                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{lang === "ar" ? "إجمالي السجلات" : "Total Scanned"}</p>
+                <p className="text-xl font-mono font-black text-white mt-1">{validationSummary.total}</p>
+              </div>
+
+              <div className="bg-emerald-500/5 border border-emerald-500/10 p-3.5 rounded-xl text-center">
+                <p className="text-[10px] text-emerald-450 uppercase font-bold tracking-wider">{lang === "ar" ? "صالحة للإرسال" : "Valid (Ready)"}</p>
+                <p className="text-xl font-mono font-black text-emerald-405 mt-1">{validationSummary.valid}</p>
+              </div>
+
+              <div className="bg-red-500/5 border border-red-500/10 p-3.5 rounded-xl text-center flex flex-col justify-between items-center">
+                <p className="text-[10px] text-red-450 uppercase font-bold tracking-wider">{lang === "ar" ? "أرقام خاطئة" : "Rejected Invalids"}</p>
+                <p className="text-xl font-mono font-black text-red-500 mt-0.5">{validationSummary.invalid}</p>
+              </div>
+
+              <div className="bg-indigo-500/5 border border-indigo-500/10 p-3.5 rounded-xl text-center flex flex-col justify-between items-center">
+                <p className="text-[10px] text-indigo-450 uppercase font-bold tracking-wider">{lang === "ar" ? "أرقام مكررة" : "Duplicates Found"}</p>
+                <p className="text-xl font-mono font-black text-indigo-400 mt-0.5">{validationSummary.duplicates}</p>
+              </div>
+            </div>
+
+            {/* Candidates peek preview list */}
+            {validationSummary.peek.length > 0 && (
+              <div className="bg-black/30 p-4 rounded-xl border border-slate-850 space-y-2 text-xs">
+                <div className="flex justify-between items-center border-b border-slate-800 pb-1.5">
+                  <span className="font-extrabold text-indigo-400 uppercase tracking-widest text-[10px]">
+                    {lang === "ar" ? "📋 عينة عشوائية للمستلمين الجاهزين أول 10 أسطر:" : "📋 Valid Recipient Queue Sample (Top 10 entries):"}
+                  </span>
+                  <span className="text-[9px] text-slate-500 font-mono">Matched total: {validationSummary.valid}</span>
+                </div>
+
+                <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 text-[11px] font-mono leading-relaxed">
+                  {validationSummary.peek.map((r, itemIdx) => (
+                    <div key={itemIdx} className="flex flex-col sm:flex-row sm:justify-between border-b border-slate-900 pb-1 text-slate-300">
+                      <span>{itemIdx + 1}. {r.name} ➔ {r.phone}</span>
+                      <span className="text-slate-500 font-sans text-[10px] sm:text-right mt-0.5 sm:mt-0">
+                        {lang === "ar" ? GOV_AR[r.gov] || r.gov : r.gov} | {r.cat}
+                      </span>
+                    </div>
                   ))}
-                </select>
+                </div>
               </div>
+            )}
+          </div>
+        )}
 
-              {/* Checkboxes for governorates inside CSV */}
+        {/* STEP 5: CORE CAMPAIGN CONTROLLER ENGINE */}
+        <div className="border-t border-slate-800 pt-5 space-y-5">
+          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+            
+            {/* Delay Speed setting & Real-time indices */}
+            <div className="flex flex-wrap items-center gap-4">
               <div className="space-y-1">
-                <span className="text-xs text-slate-400 block font-semibold">Ticked Governorates checklist to allow import:</span>
-                <div className="grid grid-cols-2 shadow-inner border border-slate-900 bg-black/30 max-h-[110px] overflow-y-auto p-2 rounded-lg gap-1.5 text-[10px]">
-                  {IRAQ_GOVERNORATES.map(gov => {
-                    const countInCsv = csvSourceRows.filter(r => (r.governorate || "").trim().toLowerCase() === gov.trim().toLowerCase()).length;
-                    const isChecked = csvSelectedGovernorates.includes(gov);
-                    return (
-                      <label key={gov} className="flex items-center gap-1.5 cursor-pointer text-slate-300 select-none">
-                        <input
-                          type="checkbox"
-                          checked={isChecked}
-                          onChange={(e) => {
-                            if (e.target.checked) setCsvSelectedGovernorates(prev => [...prev, gov]);
-                            else setCsvSelectedGovernorates(prev => prev.filter(g => g !== gov));
-                          }}
-                          className="accent-indigo-500 w-3.5 h-3.5"
-                        />
-                        <span>{lang === "ar" ? GOV_AR[gov] : gov} ({countInCsv})</span>
-                      </label>
-                    );
-                  })}
-                </div>
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => setCsvSelectedGovernorates(IRAQ_GOVERNORATES)}
-                    className="bg-slate-800 text-[10px] hover:bg-slate-750 text-white px-2 py-0.5 rounded"
-                  >
-                    All
-                  </button>
-                  <button
-                    onClick={() => setCsvSelectedGovernorates([])}
-                    className="bg-slate-800 text-[10px] hover:bg-slate-750 text-white px-2 py-0.5 rounded"
-                  >
-                    Clear
-                  </button>
+                <label className="text-[11px] text-slate-400 font-bold uppercase tracking-wider block font-sans">
+                  {lang === "ar" ? "سرعة الإرسال (تأخير بثواني):" : "Transmit Delay spacing:"}
+                </label>
+                <div className="flex items-center gap-2">
+                  <input
+                    type="number"
+                    min="1"
+                    max="60"
+                    value={delaySeconds}
+                    onChange={(e) => setDelaySeconds(Number(e.target.value))}
+                    className="w-20 bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1 text-white text-xs font-mono font-bold"
+                  />
+                  <span className="text-[10px] text-slate-500 font-mono">{lang === "ar" ? "ثواني بين كل رسالة" : "seconds spacer"}</span>
                 </div>
               </div>
 
-              {/* Real-time counters matching governorate filter */}
-              <div className="grid grid-cols-4 gap-1.5 text-center text-[10px] bg-slate-900/60 p-2.5 rounded-lg font-mono">
-                <div>
-                  <p className="text-white font-bold">{csvStats.total}</p>
-                  <p className="text-slate-400 mt-0.5">Total</p>
+              {/* Dynamic Queue Indicators */}
+              <div className="flex gap-2.5 select-text pt-2.5">
+                <div className="bg-emerald-500/5 border border-emerald-500/10 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">{lang === "ar" ? "مكتمل" : "Sent"}</p>
+                  <p className="text-sm font-bold font-mono text-emerald-400">{countSent}</p>
                 </div>
-                <div>
-                  <p className="text-emerald-400 font-bold">{csvStats.valid}</p>
-                  <p className="text-slate-400 mt-0.5">Valid</p>
+                <div className="bg-red-500/5 border border-red-500/10 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">{lang === "ar" ? "فشل" : "Failed"}</p>
+                  <p className="text-sm font-bold font-mono text-red-400">{countFailed}</p>
                 </div>
-                <div>
-                  <p className="text-red-400 font-bold">{csvStats.invalid}</p>
-                  <p className="text-slate-400 mt-0.5">Invalid</p>
-                </div>
-                <div>
-                  <p className="text-indigo-400 font-bold">{csvStats.duplicates}</p>
-                  <p className="text-slate-400 mt-0.5">Dups</p>
-                </div>
-              </div>
-
-              {/* Action buttons */}
-              <div className="flex gap-2">
-                <button
-                  onClick={() => setShowCsvPreview(!showCsvPreview)}
-                  className="flex-1 border border-slate-700 hover:bg-slate-800 text-slate-200 text-xs font-bold py-1.5 rounded-lg transition cursor-pointer"
-                >
-                  🔍 {lang === "ar" ? "معاينة عينة الاسطر" : "Preview Selected"}
-                </button>
-                <button
-                  onClick={handleAddCSVToQueueFiltered}
-                  className="flex-1 bg-indigo-500 hover:bg-indigo-400 text-black text-xs font-black py-1.5 rounded-lg transition cursor-pointer"
-                >
-                  ⚡ {lang === "ar" ? "تأكيد واستيراد الجاهز" : "Add Selected To Queue"}
-                </button>
-              </div>
-
-              {/* CSV selection preview */}
-              {showCsvPreview && (
-                <div className="bg-black/50 p-2.5 rounded-lg text-[10px] space-y-1 font-mono text-slate-300">
-                  <span className="font-bold border-b border-slate-800 pb-0.5 block mb-1">CSV Selected Sample records:</span>
-                  <div className="max-h-[90px] overflow-y-auto space-y-1">
-                    {csvFilteredRows.slice(0, 10).map((r, idx) => (
-                      <div key={idx} className="flex justify-between">
-                        <span>{idx+1}. {r.businessName}</span>
-                        <span className="text-indigo-400">{r.rawPhone} ({r.governorate})</span>
-                      </div>
-                    ))}
-                    {csvFilteredRows.length > 10 && <p className="text-slate-500 italic">... and {csvFilteredRows.length - 10} more records</p>}
-                  </div>
-                </div>
-              )}
-            </div>
-          )}
-        </div>
-
-      </div>
-
-      {/* 5. SENDING CONTROLS CARD AND CONNECTION */}
-      <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl shadow-xl space-y-4">
-        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-3 pb-3 border-b border-slate-800">
-          <div className="flex items-center gap-2">
-            <Clock className="text-indigo-400" size={16} />
-            <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-              {lang === "ar" ? "5. لوحة التحكم والتحكم في الإرسال الفوري" : "5. Sending Controls & Channel Integrations"}
-            </h2>
-          </div>
-
-          {/* Active Connection state indicator */}
-          <div className="flex items-center gap-3">
-            <div className="flex items-center gap-1.5 text-xs">
-              {nabdaStatus === "testing" && (
-                <span className="text-slate-400 font-mono animate-pulse">Testing connection...</span>
-              )}
-              {nabdaStatus === "connected" && (
-                <span className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20">
-                  <span className="inline-block w-2 h-2 rounded-full bg-emerald-400 animate-ping"></span>
-                  🟢 {lang === "ar" ? "موصول بخادم Nabda" : "Connected to Nabda"}
-                </span>
-              )}
-              {nabdaStatus === "error" && (
-                <span className="flex items-center gap-1 text-red-400 font-bold bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20" title={nabdaErrorDetails}>
-                  🔴 {lang === "ar" ? "خطأ في الاتصال بالخادم" : "Nabda Connection Error"}
-                </span>
-              )}
-            </div>
-
-            <button
-              onClick={testNabdaConnection}
-              className="bg-slate-800 hover:bg-slate-750 text-slate-200 text-[10px] font-bold px-3 py-1.5 rounded-lg transition flex items-center gap-1 cursor-pointer"
-            >
-              <RefreshCw size={11} className={nabdaStatus === "testing" ? "animate-spin" : ""} />
-              {lang === "ar" ? "اختبار الاتصال" : "Test Connection"}
-            </button>
-          </div>
-        </div>
-
-        <div className="grid grid-cols-1 lg:grid-cols-12 gap-5">
-          {/* Dispatch actions list */}
-          <div className="lg:col-span-5 space-y-4">
-            <div className="flex flex-col sm:flex-row gap-3 items-start sm:items-center">
-              <div className="space-y-1 text-xs">
-                <span className="text-slate-400 block font-semibold">{lang === "ar" ? "معدل التأخير (ثانية):" : "Delay spacing (seconds):"}</span>
-                <input
-                  type="number"
-                  min="1"
-                  max="60"
-                  value={delaySeconds}
-                  onChange={(e) => setDelaySeconds(Number(e.target.value))}
-                  className="w-24 bg-[#0A0B0E] border border-[#2D3139] rounded px-3 py-1.5 text-white text-xs"
-                />
-              </div>
-
-              {/* Dynamic Counters displaying status */}
-              <div className="flex gap-3 flex-wrap pt-2 select-text">
-                <div className="bg-emerald-500/5 border border-emerald-500/10 px-3 py-1.5 rounded-xl text-center">
-                  <p className="text-[9px] text-slate-450 uppercase font-mono font-bold">Sent</p>
-                  <p className="text-emerald-405 font-bold font-mono">{countSent}</p>
-                </div>
-                <div className="bg-red-500/5 border border-red-500/10 px-3 py-1.5 rounded-xl text-center">
-                  <p className="text-[9px] text-slate-450 uppercase font-mono font-bold">Failed</p>
-                  <p className="text-red-405 font-bold font-mono">{countFailed}</p>
-                </div>
-                <div className="bg-indigo-500/5 border border-indigo-500/10 px-3 py-1.5 rounded-xl text-center">
-                  <p className="text-[9px] text-slate-450 uppercase font-mono font-bold">Remaining</p>
-                  <p className="text-indigo-405 font-bold font-mono">{countRemaining}</p>
+                <div className="bg-indigo-500/5 border border-indigo-500/10 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
+                  <p className="text-[9px] text-slate-400 uppercase font-bold">{lang === "ar" ? "متبقي" : "Ready"}</p>
+                  <p className="text-sm font-bold font-mono text-indigo-400">{countRemaining}</p>
                 </div>
               </div>
             </div>
 
-            {/* Core visible large control buttons */}
-            <div className="grid grid-cols-2 gap-3 pt-2">
+            {/* Broadcast action trigger buttons */}
+            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
               {!isSendingActive ? (
                 <button
                   onClick={startSendingProcess}
                   disabled={nabdaStatus !== "connected" && nabdaStatus !== "idle"}
-                  className="col-span-2 bg-emerald-500 hover:bg-emerald-405 text-slate-950 text-sm font-black py-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer shadow-md disabled:opacity-50"
+                  className="w-full md:w-auto bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-6 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/10 cursor-pointer disabled:opacity-40"
                 >
-                  <Play size={15} fill="#020617" />
-                  {lang === "ar" ? "▶ بدء الإرسال الجماعي" : "▶ Start Sending"}
+                  <Play size={13} fill="#020617" />
+                  <span>{lang === "ar" ? "▶ بدء بث الإرسال الجماعي" : "▶ Start Broadcast"}</span>
                 </button>
               ) : (
-                <>
+                <div className="flex items-center gap-2.5 w-full md:w-auto">
                   {sendingPaused ? (
                     <button
                       onClick={handleResume}
-                      className="bg-indigo-500 hover:bg-indigo-405 text-black text-xs font-black py-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
+                      className="flex-1 md:flex-none bg-indigo-500 hover:bg-indigo-400 text-black font-extrabold px-5 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
                     >
-                      <PlayCircleReplacer />
-                      {lang === "ar" ? "▶ استئناف الإرسال" : "▶ Resume"}
+                      <Play size={13} fill="#000" />
+                      <span>{lang === "ar" ? "استئناف" : "Resume"}</span>
                     </button>
                   ) : (
                     <button
                       onClick={handlePause}
-                      className="bg-amber-500 hover:bg-amber-405 text-black text-xs font-black py-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
+                      className="flex-1 md:flex-none bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-5 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
                     >
-                      <Pause size={14} fill="#020617" />
-                      {lang === "ar" ? "⏸ إيقاف مؤقت" : "⏸ Pause"}
+                      <Pause size={13} fill="#000" />
+                      <span>{lang === "ar" ? "إيقاف مؤقت" : "Pause"}</span>
                     </button>
                   )}
 
                   <button
                     onClick={handleStop}
-                    className="bg-red-650 hover:bg-red-700 text-white text-xs font-black py-3 rounded-xl transition flex items-center justify-center gap-2 cursor-pointer"
+                    className="flex-1 md:flex-none bg-red-600 hover:bg-red-550 text-white font-extrabold px-5 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
                   >
-                    <StopCircle size={14} />
-                    {lang === "ar" ? "⏹ إيقاف تام" : "⏹ Stop"}
+                    <StopCircle size={13} />
+                    <span>{lang === "ar" ? "إنهاء تماماً" : "Stop"}</span>
                   </button>
-                </>
+                </div>
               )}
             </div>
 
-            {/* Live Progress Ticker with progress line */}
-            {isSendingActive && (
-              <div className="bg-[#0A0B0E] p-3 border border-slate-800 rounded-xl space-y-1.5 font-mono">
-                <div className="flex justify-between text-[10px] text-slate-400">
-                  <span>Progress: {countSent + countFailed} / {totalInQueue}</span>
-                  <span className="text-indigo-400 font-bold">{progressPercentage}%</span>
-                </div>
-                <div className="w-full bg-[#14171D] h-2 rounded-full overflow-hidden">
-                  <div 
-                    className="bg-indigo-500 h-full transition-all duration-300"
-                    style={{ width: `${progressPercentage}%` }}
-                  />
-                </div>
-              </div>
-            )}
           </div>
 
-          {/* Real-time Logger ledger terminal logs */}
-          <div className="lg:col-span-7 flex flex-col space-y-1">
-            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider font-mono block">
+          {/* Real-time Ticker Progression Bar */}
+          {isSendingActive && (
+            <div className="bg-[#0A0B0E] p-4 border border-slate-800 rounded-xl space-y-2 font-mono">
+              <div className="flex justify-between items-center text-[11px] text-slate-450">
+                <span className="flex items-center gap-1">
+                  <span className="inline-block w-2 h-2 rounded-full bg-indigo-505 animate-ping"></span>
+                  Progress Rate: {countSent + countFailed} / {totalInQueue}
+                </span>
+                <span className="text-indigo-400 font-black">{progressPercentage}%</span>
+              </div>
+              <div className="w-full bg-[#14171D] h-2.5 rounded-full overflow-hidden">
+                <div 
+                  className="bg-indigo-500 h-full transition-all duration-300"
+                  style={{ width: `${progressPercentage}%` }}
+                />
+              </div>
+            </div>
+          )}
+
+          {/* Terminal Console Logs */}
+          <div className="space-y-2">
+            <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest font-mono block">
               📟 Active Dispatch Ledger Monitor:
-            </span>
-            <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3 h-[180px] overflow-y-auto font-mono text-[10px] space-y-1 custom-scrollbar text-left select-all">
+            </label>
+            <div className="bg-black/40 border border-slate-800 rounded-xl p-3 h-[140px] overflow-y-auto font-mono text-[10px] space-y-1 text-left select-all">
               {sendLogs.length === 0 ? (
-                <p className="text-slate-650 italic">Broadcaster idle. Click Start Sending to execute batch logs...</p>
+                <p className="text-slate-600 italic">Ledger pipeline cold. Push Play above to stream active log events...</p>
               ) : (
                 sendLogs.map((log, lIdx) => (
-                  <p key={lIdx} className={log.includes("Successfully") || log.includes("Successfully") ? "text-emerald-400" : log.includes("Failed") || log.includes("Failed") ? "text-red-400" : "text-slate-300"}>
+                  <p key={lIdx} className={log.includes("🟢") ? "text-emerald-400" : log.includes("🔴") ? "text-red-400" : "text-slate-400"}>
                     {log}
                   </p>
                 ))
               )}
             </div>
           </div>
+
         </div>
+
       </div>
 
-      {/* 6. ADVANCED CHANNELS QUEUE PREVIEW BOARD */}
-      <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl shadow-xl space-y-4">
-        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 pb-3 border-b border-slate-800">
+      {/* COLLAPSIBLE DETAILED CONTROLS: QUEUE LIST AND OPERATIONS REPORT */}
+      <div className="bg-[#14171D] border border-slate-800/80 rounded-2xl overflow-hidden shadow-lg">
+        <button
+          onClick={() => setShowAdvancedQueue(!showAdvancedQueue)}
+          className="w-full flex items-center justify-between p-4 bg-slate-900/40 hover:bg-slate-900/70 border-b border-slate-800/40 text-left cursor-pointer transition"
+        >
           <div className="flex items-center gap-2">
-            <Filter className="text-[#C5A059]" size={16} />
-            <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-              {lang === "ar" ? "6. تصفية وإدارة طابور المستلمين" : "6. Active Sending Queue Preview Board"}
-            </h2>
+            <Sliders className="text-[#C5A059]" size={15} />
+            <span className="text-xs font-bold text-slate-205 uppercase tracking-wider">
+              {lang === "ar" ? "🔍 تفقد قائمة الجدولة وإصدار تقارير البث المتقدمة" : "🔍 Advanced Queue Inspector & Operational Reports"}
+            </span>
           </div>
-          <span className="text-[11px] text-[#C5A059] font-mono font-bold">
-            Matches found: {queueFiltered.length} / {totalInQueue}
+
+          <span className="text-[10px] bg-slate-800 hover:bg-slate-700 font-mono font-bold px-2.5 py-1 rounded text-slate-300 select-none">
+            {showAdvancedQueue ? (lang === "ar" ? "إخفاء التفاصيل" : "Collapse Block") : (lang === "ar" ? "استعراض السجلات" : "Expand Block")}
           </span>
-        </div>
+        </button>
 
-        {/* Filters Panel form */}
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs">
-          <div className="space-y-1">
-            <span className="text-slate-400">{lang === "ar" ? "المحافظة:" : "Governorate:"}</span>
-            <select
-              value={filterGov}
-              onChange={(e) => setFilterGov(e.target.value)}
-              className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
-            >
-              <option value="All">All Governorates</option>
-              {IRAQ_GOVERNORATES.map(gov => (
-                <option key={gov} value={gov}>{lang === "ar" ? GOV_AR[gov] : gov}</option>
-              ))}
-            </select>
-          </div>
+        {showAdvancedQueue && (
+          <div className="p-5 md:p-6 space-y-6 animate-fadeIn">
+            
+            {/* Operational Reports download area */}
+            <div className="space-y-3 font-sans">
+              <div>
+                <h4 className="text-xs font-extrabold text-slate-205 uppercase tracking-widest">
+                  {lang === "ar" ? "1. تصدير تقارير حملات البث" : "1. Export Dedicated Transaction CSV Logs"}
+                </h4>
+                <p className="text-[11px] text-slate-405 mt-0.5">
+                  {lang === "ar" 
+                    ? "حمّل النسخ المنفصلة لملخص المعاملات، أو الأرقام الخاطئة التالفة التي تم فلترتها، أو سجل المعوقات." 
+                    : "Download separate transaction reports to store external backups, audits, fails, or isolated dups."}
+                </p>
+              </div>
 
-          <div className="space-y-1">
-            <span className="text-slate-400">{lang === "ar" ? "التصنيف:" : "Category:"}</span>
-            <select
-              value={filterCat}
-              onChange={(e) => setFilterCat(e.target.value)}
-              className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
-            >
-              <option value="All">All Categories</option>
-              {Array.from(new Set(queue.map(q => q.category))).filter(Boolean).map(cat => (
-                <option key={cat} value={cat}>{cat}</option>
-              ))}
-            </select>
-          </div>
+              <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3 pt-1">
+                <button
+                  onClick={handleExportFinalQueue}
+                  className="bg-[#12141a] hover:bg-slate-800/80 border border-slate-800 p-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer shadow-sm text-slate-200"
+                >
+                  <FileSpreadsheet size={15} className="text-indigo-400" />
+                  <span>{lang === "ar" ? "تصدير الطابور بالكامل" : "Final Queue CSV"}</span>
+                </button>
 
-          <div className="space-y-1">
-            <span className="text-slate-400">{lang === "ar" ? "المصدر:" : "Source:"}</span>
-            <select
-              value={filterSrc}
-              onChange={(e) => setFilterSrc(e.target.value)}
-              className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
-            >
-              <option value="All">All Sources</option>
-              <option value="manual">Manual Input</option>
-              <option value="governorate">Gov Search</option>
-              <option value="csv">CSV Parsing</option>
-            </select>
-          </div>
+                <button
+                  onClick={handleExportSent}
+                  className="bg-[#12141a] hover:bg-slate-800/80 border border-slate-800 p-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer shadow-sm text-slate-200"
+                >
+                  <CheckCircle2 size={15} className="text-emerald-405" />
+                  <span>{lang === "ar" ? "تصدير الرسائل الناجحة" : "Delivered CSV"}</span>
+                </button>
 
-          <div className="space-y-1">
-            <span className="text-slate-400">{lang === "ar" ? "الحالة:" : "Status:"}</span>
-            <select
-              value={filterStatus}
-              onChange={(e) => setFilterStatus(e.target.value)}
-              className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
-            >
-              <option value="All">All Statuses</option>
-              <option value="ready">Ready</option>
-              <option value="sending">Sending</option>
-              <option value="sent">Sent</option>
-              <option value="failed">Failed</option>
-              <option value="skipped">Skipped</option>
-              <option value="needs_review">Needs Review</option>
-            </select>
-          </div>
+                <button
+                  onClick={handleExportFailed}
+                  className="bg-[#12141a] hover:bg-slate-800/80 border border-slate-800 p-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer shadow-sm text-slate-200"
+                >
+                  <Trash2 size={15} className="text-red-405" />
+                  <span>{lang === "ar" ? "تصدير محاولات الفشل" : "Failures CSV"}</span>
+                </button>
 
-          <div className="col-span-2 md:col-span-1 space-y-1">
-            <span className="text-slate-400 font-semibold block">{lang === "ar" ? "بحث بالاسم / الهاتف:" : "Search name/phone:"}</span>
-            <div className="relative">
-              <input
-                type="text"
-                value={searchTerm}
-                onChange={(e) => setSearchTerm(e.target.value)}
-                placeholder="Search text..."
-                className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white text-xs"
-              />
+                <button
+                  onClick={handleExportInvalid}
+                  className="bg-[#12141a] hover:bg-slate-800/80 border border-slate-800 p-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer shadow-sm text-slate-200"
+                >
+                  <AlertCircle size={15} className="text-amber-500" />
+                  <span>{lang === "ar" ? "تصدير الأرقام التالفة" : "Invalids CSV"}</span>
+                </button>
+
+                <button
+                  onClick={handleExportDuplicates}
+                  className="bg-[#12141a] hover:bg-slate-800/80 border border-slate-800 p-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center text-center gap-1.5 cursor-pointer shadow-sm col-span-2 sm:col-span-1 text-slate-200"
+                >
+                  <RefreshCw size={15} className="text-indigo-400" />
+                  <span>{lang === "ar" ? "تصدير الأرقام المكررة" : "Duplicates CSV"}</span>
+                </button>
+              </div>
             </div>
-          </div>
-        </div>
 
-        {/* SPREADSHEET CHANNELS QUEUE PREVIEW TABLE */}
-        <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0A0B0E]/40 max-h-[300px] overflow-y-auto custom-scrollbar select-text">
-          <table className="w-full text-left text-xs border-collapse">
-            <thead>
-              <tr className="bg-[#0A0B0E] border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
-                <th className="p-3 text-center w-12">#</th>
-                <th className="p-3">Business Name</th>
-                <th className="p-3">Phone Number</th>
-                <th className="p-3">Governorate</th>
-                <th className="p-3">Category</th>
-                <th className="p-3">Source</th>
-                <th className="p-3">Status</th>
-                <th className="p-3 text-center w-20">Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {queueFiltered.length === 0 ? (
-                <tr>
-                  <td colSpan={8} className="p-8 text-center text-slate-500 italic">No records found matching criteria in bulk queue.</td>
-                </tr>
-              ) : (
-                queueFiltered.map((item, qIdx) => {
-                  const isActive = activeQueueIndex !== null && queue[activeQueueIndex]?.id === item.id;
-                  return (
-                    <tr 
-                      key={item.id} 
-                      className={`border-b border-slate-900/50 hover:bg-slate-800/10 ${isActive ? "bg-indigo-500/5 font-semibold" : ""}`}
-                    >
-                      <td className="p-3 text-center text-[10px] text-slate-500 font-mono">{qIdx + 1}</td>
-                      <td className="p-3 font-semibold text-white whitespace-nowrap">{item.businessName}</td>
-                      <td className="p-3 font-mono text-slate-300">{item.normalizedPhone}</td>
-                      <td className="p-3">
-                        <span className="bg-slate-800 text-slate-200 px-2 py-0.5 rounded text-[10px]">
-                          {lang === "ar" ? GOV_AR[item.governorate] || item.governorate : item.governorate}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <span className="bg-slate-800 text-slate-350 px-2 py-0.5 rounded text-[10px]">
-                          {item.category}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        <span className="bg-[#1C2128] text-indigo-400 border border-slate-800 px-1.5 py-0.2 rounded uppercase font-mono text-[9px]">
-                          {item.source}
-                        </span>
-                      </td>
-                      <td className="p-3">
-                        {item.status === "sent" && <span className="bg-emerald-500/10 text-emerald-400 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Sent</span>}
-                        {item.status === "failed" && <span className="bg-red-500/10 text-red-400 border border-red-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Failed</span>}
-                        {item.status === "ready" && <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Ready</span>}
-                        {item.status === "sending" && <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold animate-pulse">Sending</span>}
-                        {item.status === "needs_review" && <span className="bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Needs Review</span>}
-                        {item.status === "skipped" && <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full text-[9px]">Skipped</span>}
-                      </td>
-                      <td className="p-3 text-center flex items-center justify-center gap-1">
-                        {item.status === "needs_review" && (
-                          <button
-                            onClick={() => {
-                              setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "ready" } : q));
-                            }}
-                            className="bg-emerald-500/10 hover:bg-emerald-500/20 px-1.5 py-0.5 rounded text-[9px] text-emerald-400 font-bold transition"
-                            title="Approve to Ready"
-                          >
-                            Approve
-                          </button>
-                        )}
-                        <button
-                          onClick={() => {
-                            setQueue(prev => prev.filter(q => q.id !== item.id));
-                          }}
-                          className="text-slate-400 hover:text-red-400 transition p-1"
-                        >
-                          <Trash2 size={13} />
-                        </button>
-                      </td>
+            {/* Filtering Controls and Pipeline Spreadsheet Table */}
+            <div className="space-y-4">
+              <div className="border-t border-slate-800/60 pt-5 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+                <div className="flex items-center gap-2">
+                  <Filter size={15} className="text-indigo-400" />
+                  <h4 className="text-xs font-extrabold text-slate-205 uppercase tracking-widest font-sans">
+                    {lang === "ar" ? "2. تصفية وفرز طابور المستلمين النشط" : "2. Real-time Queue Filter & Viewer"}
+                  </h4>
+                </div>
+                <span className="text-[10px] text-indigo-400 font-mono font-bold">
+                  {lang === "ar" ? `العناصر المطابقة: ${queueFiltered.length} / ${totalInQueue}` : `Matches: ${queueFiltered.length} / ${totalInQueue}`}
+                </span>
+              </div>
+
+              {/* Filters Panel form items */}
+              <div className="grid grid-cols-2 md:grid-cols-5 gap-3 text-xs select-none font-sans">
+                <div className="space-y-1">
+                  <span className="text-slate-400">{lang === "ar" ? "المحافظة:" : "Governorate:"}</span>
+                  <select
+                    value={filterGov}
+                    onChange={(e) => setFilterGov(e.target.value)}
+                    className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
+                  >
+                    <option value="All">All Governorates</option>
+                    {IRAQ_GOVERNORATES.map(gov => (
+                      <option key={gov} value={gov}>{lang === "ar" ? GOV_AR[gov] : gov}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400">{lang === "ar" ? "التصنيف:" : "Category:"}</span>
+                  <select
+                    value={filterCat}
+                    onChange={(e) => setFilterCat(e.target.value)}
+                    className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
+                  >
+                    <option value="All">All Categories</option>
+                    {Array.from(new Set(queue.map(q => q.category))).filter(Boolean).map(cat => (
+                      <option key={cat} value={cat}>{cat}</option>
+                    ))}
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400">{lang === "ar" ? "المصدر:" : "Source:"}</span>
+                  <select
+                    value={filterSrc}
+                    onChange={(e) => setFilterSrc(e.target.value)}
+                    className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
+                  >
+                    <option value="All">All Sources</option>
+                    <option value="manual">Manual Input</option>
+                    <option value="governorate">Gov Search</option>
+                    <option value="csv">CSV Parsing</option>
+                  </select>
+                </div>
+
+                <div className="space-y-1">
+                  <span className="text-slate-400">{lang === "ar" ? "الحالة:" : "Status:"}</span>
+                  <select
+                    value={filterStatus}
+                    onChange={(e) => setFilterStatus(e.target.value)}
+                    className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white"
+                  >
+                    <option value="All">All Statuses</option>
+                    <option value="ready">Ready</option>
+                    <option value="sending">Sending</option>
+                    <option value="sent">Sent</option>
+                    <option value="failed">Failed</option>
+                    <option value="skipped">Skipped</option>
+                    <option value="needs_review">Needs Review</option>
+                  </select>
+                </div>
+
+                <div className="col-span-2 md:col-span-1 space-y-1">
+                  <span className="text-slate-400">{lang === "ar" ? "بحث بالاسم/الهاتف:" : "Search word:"}</span>
+                  <input
+                    type="text"
+                    value={searchTerm}
+                    onChange={(e) => setSearchTerm(e.target.value)}
+                    placeholder="Search..."
+                    className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1.5 text-white text-xs"
+                  />
+                </div>
+              </div>
+
+              {/* Table list */}
+              <div className="border border-slate-800 rounded-xl overflow-hidden bg-[#0A0B0E]/40 max-h-[300px] overflow-y-auto select-text font-sans">
+                <table className="w-full text-left text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-[#0A0B0E] border-b border-slate-850 text-slate-400 text-[10px] font-bold uppercase tracking-wider">
+                      <th className="p-3 text-center w-12">#</th>
+                      <th className="p-3">Business Name</th>
+                      <th className="p-3">Phone Number</th>
+                      <th className="p-3">Governorate</th>
+                      <th className="p-3">Category</th>
+                      <th className="p-3">Source</th>
+                      <th className="p-3">Status</th>
+                      <th className="p-2.5 text-center w-20">Action</th>
                     </tr>
-                  );
-                })
-              )}
-            </tbody>
-          </table>
-        </div>
-      </div>
+                  </thead>
+                  <tbody>
+                    {queueFiltered.length === 0 ? (
+                      <tr>
+                        <td colSpan={8} className="p-8 text-center text-slate-500 italic">No records present in bulk queue ledger matching search.</td>
+                      </tr>
+                    ) : (
+                      queueFiltered.map((item, qIdx) => {
+                        const isActive = activeQueueIndex !== null && queue[activeQueueIndex]?.id === item.id;
+                        return (
+                          <tr 
+                            key={item.id} 
+                            className={`border-b border-slate-900/50 hover:bg-slate-800/10 ${isActive ? "bg-indigo-505/5 font-semibold" : ""}`}
+                          >
+                            <td className="p-3 text-center text-[10px] text-slate-500 font-mono">{qIdx + 1}</td>
+                            <td className="p-3 font-semibold text-white whitespace-nowrap">{item.businessName}</td>
+                            <td className="p-3 font-mono text-slate-350">{item.normalizedPhone}</td>
+                            <td className="p-3">
+                              <span className="bg-slate-800 text-slate-200 px-2 py-0.5 rounded text-[10px]">
+                                {lang === "ar" ? GOV_AR[item.governorate] || item.governorate : item.governorate}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span className="bg-slate-800 text-slate-350 px-2 py-0.5 rounded text-[10px]">
+                                {item.category}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              <span className="bg-[#1C2128] text-indigo-400 border border-slate-800 px-1.5 py-0.2 rounded uppercase font-mono text-[9px]">
+                                {item.source}
+                              </span>
+                            </td>
+                            <td className="p-3">
+                              {item.status === "sent" && <span className="bg-emerald-500/10 text-emerald-405 border border-emerald-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Sent</span>}
+                              {item.status === "failed" && <span className="bg-red-500/10 text-red-405 border border-red-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold font-mono">Failed</span>}
+                              {item.status === "ready" && <span className="bg-indigo-500/10 text-indigo-400 border border-indigo-505/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Ready</span>}
+                              {item.status === "sending" && <span className="bg-amber-500/10 text-amber-550 border border-amber-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold animate-pulse">Sending</span>}
+                              {item.status === "needs_review" && <span className="bg-amber-500/10 text-amber-550 border border-amber-500/20 px-2 py-0.5 rounded-full text-[9px] font-bold">Needs Review</span>}
+                              {item.status === "skipped" && <span className="bg-slate-800 text-slate-400 px-2 py-0.5 rounded-full text-[9px]">Skipped</span>}
+                            </td>
+                            <td className="p-2 text-center">
+                              <div className="flex items-center justify-center gap-1.5">
+                                {item.status === "needs_review" && (
+                                  <button
+                                    onClick={() => {
+                                      setQueue(prev => prev.map(q => q.id === item.id ? { ...q, status: "ready" } : q));
+                                    }}
+                                    className="bg-emerald-500/15 hover:bg-emerald-500/25 px-1.5 py-0.5 rounded text-[9px] text-emerald-400 font-bold transition cursor-pointer"
+                                  >
+                                    Approve
+                                  </button>
+                                )}
+                                <button
+                                  onClick={() => {
+                                    setQueue(prev => prev.filter(q => q.id !== item.id));
+                                  }}
+                                  className="text-slate-400 hover:text-red-405 transition p-1 cursor-pointer"
+                                  title="Delete record"
+                                >
+                                  <Trash2 size={12} />
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        );
+                      })
+                    )}
+                  </tbody>
+                </table>
+              </div>
+            </div>
 
-      {/* 7. REPORTS EXPORT PANEL */}
-      <div className="bg-[#14171D] border border-[#2D3139] p-5 rounded-2xl shadow-xl space-y-4">
-        <div className="flex items-center gap-2 pb-3 border-b border-slate-800">
-          <Download className="text-[#C5A059]" size={16} />
-          <h2 className="text-xs font-bold text-slate-200 uppercase tracking-wider">
-            {lang === "ar" ? "7. تصدير التقارير وسجلات الأخطاء والمكررات" : "7. Export Dedicated Operations Reports"}
-          </h2>
-        </div>
-
-        <p className="text-xs text-slate-400 leading-relaxed">
-          {lang === "ar" 
-            ? "حمل ملفات التقارير والتدقيق المنفصلة كملفات Excel/CSV لتسجيل المعاملات وقوائم التكرار أو التالفة."
-            : "Download custom CSV logs for audit tracking across various transaction filters. Keeps exact Iraq formatting."}
-        </p>
-
-        <div className="grid grid-cols-2 md:grid-cols-5 gap-3.5 pt-2">
-          <button
-            onClick={handleExportFinalQueue}
-            className="bg-[#14171D] hover:bg-slate-800 border border-slate-800 text-slate-200 py-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm"
-          >
-            <FileSpreadsheet size={16} className="text-indigo-400" />
-            <span>{lang === "ar" ? "تصدير القائمة كاملة" : "Export Final Queue CSV"}</span>
-          </button>
-
-          <button
-            onClick={handleExportSent}
-            className="bg-[#14171D] hover:bg-slate-800 border border-slate-800 text-slate-200 py-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm"
-          >
-            <CheckCircle2 size={16} className="text-emerald-400" />
-            <span>{lang === "ar" ? "تصدير المستلم المكتمل" : "Export Sent CSV"}</span>
-          </button>
-
-          <button
-            onClick={handleExportFailed}
-            className="bg-[#14171D] hover:bg-slate-800 border border-slate-800 text-slate-200 py-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm"
-          >
-            <AlertCircle size={16} className="text-red-400" />
-            <span>{lang === "ar" ? "تصدير محاولات الفشل" : "Export Failed CSV"}</span>
-          </button>
-
-          <button
-            onClick={handleExportInvalid}
-            className="bg-[#14171D] hover:bg-slate-800 border border-slate-800 text-slate-200 py-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm"
-          >
-            <Trash2 size={16} className="text-amber-500" />
-            <span>{lang === "ar" ? "تصدير القوائم المستبعدة" : "Export Invalid CSV"}</span>
-          </button>
-
-          <button
-            onClick={handleExportDuplicates}
-            className="bg-[#14171D] hover:bg-slate-800 border border-slate-800 text-slate-200 py-3 rounded-xl transition text-[11px] font-bold flex flex-col items-center justify-center gap-2 cursor-pointer shadow-sm"
-          >
-            <RefreshCw size={16} className="text-indigo-400" />
-            <span>{lang === "ar" ? "تصدير المكررات والشكوك" : "Export Duplicates CSV"}</span>
-          </button>
-        </div>
+          </div>
+        )}
       </div>
 
     </div>
-  );
-}
-
-// Inline custom helpers to handle TS type checks cleanly and fast representation
-function PlayCircleReplacer() {
-  return (
-    <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round" className="lucide lucide-play-circle"><circle cx="12" cy="12" r="10"/><polygon points="10 8 16 12 10 16 10 8"/></svg>
   );
 }

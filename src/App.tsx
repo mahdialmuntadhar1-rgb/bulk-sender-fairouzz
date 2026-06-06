@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
+import BulkSenderView from "./components/BulkSenderView";
 import DashboardView from "./components/DashboardView";
 import CampaignsView from "./components/CampaignsView";
 import TemplatesView from "./components/TemplatesView";
@@ -15,7 +16,6 @@ import MediaManagerView from "./components/MediaManagerView";
 import BundlesView from "./components/BundlesView";
 import WhatsAppInstancesView from "./components/WhatsAppInstancesView";
 import BillingSecurityView from "./components/BillingSecurityView";
-import { apiGet, apiPost } from "./apiClient";
 
 import { 
   LeadStage, 
@@ -38,47 +38,8 @@ import {
 
 export default function App() {
   // Navigation & Language Locales
-  const [activeSection, setActiveSection] = useState<string>("dashboard");
+  const [activeSection, setActiveSection] = useState<string>("bulksender");
   const [lang, setLang] = useState<"ar" | "en">("ar");
-
-  const [apiStatus, setApiStatus] = useState({
-    loading: true,
-    ok: false,
-    message: "Checking Worker API and D1 database..."
-  });
-
-  useEffect(() => {
-    let active = true;
-
-    async function checkApiConnection() {
-      try {
-        const health = await apiGet("/api/health");
-        const db = await apiGet("/api/db-test");
-
-        if (!active) return;
-
-        setApiStatus({
-          loading: false,
-          ok: Boolean(health.ok),
-          message: `Worker + D1 connected. Tables found: ${db.tables?.length ?? 0}`
-        });
-      } catch (error: any) {
-        if (!active) return;
-
-        setApiStatus({
-          loading: false,
-          ok: false,
-          message: `API connection failed: ${error?.message || "Unknown error"}`
-        });
-      }
-    }
-
-    checkApiConnection();
-
-    return () => {
-      active = false;
-    };
-  }, []);
 
   // Core CRM Datastores (Statefully Hydrated from standard localStorage for pristine persistence!)
   const [contacts, setContacts] = useState<Contact[]>(() => {
@@ -144,23 +105,23 @@ export default function App() {
     const cleaningName = name.split("(")[0].trim();
     switch (category) {
       case "Restaurant":
-        return `Ã˜Â£Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹ Ã˜Â¹Ã™Å Ã™â€ Ã™Å  Ã˜Â´Ã™Æ’Ã˜Â±Ã˜Â§Ã™â€¹ Ã™â€žÃ™â€žÃ˜Â¯Ã˜Â¹Ã™Ë†Ã˜Â©.. Ã™â€¦Ã˜Â¹Ã™Æ’Ã™â€¦ Ã™Æ’Ã˜Â§Ã˜Â¯Ã˜Â± Ã™â€¦Ã˜Â·Ã˜Â¹Ã™â€¦ ${cleaningName}. Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã˜Â·Ã˜Â±Ã™Å Ã™â€šÃ˜Â© Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¬Ã˜Â§Ã™â€ Ã™Å  Ã™Ë†Ã˜Â³Ã˜Â±Ã˜Â¹Ã˜Â© Ã˜ÂªÃ™ÂÃ˜Â¹Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¯Ã™â€žÃ™Å Ã™â€žÃ˜Å¸`;
+        return `أهلاً عيني شكراً للدعوة.. معكم كادر مطعم ${cleaningName}. شلون طريقة التسجيل المجاني وسرعة تفعيل الدليل؟`;
       case "Cafe":
-        return `Ã™â€¦Ã˜Â±Ã˜Â­Ã˜Â¨Ã˜Â§Ã™â€¹Ã˜Å’ Ã™Ë†Ã˜ÂµÃ™â€žÃ˜ÂªÃ™â€ Ã˜Â§ Ã˜Â±Ã˜Â³Ã˜Â§Ã™â€žÃ˜Â© Ã˜Â´Ã˜Â§Ã™Æ’Ã™Ë† Ã™â€¦Ã˜Â§Ã™Æ’Ã™Ë†. Ã™â€ Ã˜Â±Ã™Å Ã˜Â¯ Ã™â€ Ã˜Â¶Ã™Å Ã™Â Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã™Å Ã™Ë† Ã™Ë†Ã˜Â§Ã™â€žÃ˜ÂµÃ™Ë†Ã˜Â± Ã™â€¦Ã˜Â§Ã™â€žÃ˜ÂªÃ™â€ Ã˜Â§ Ã˜Â¨Ã™â€šÃ˜Â³Ã™â€¦ Ã˜Â¨Ã˜ÂºÃ˜Â¯Ã˜Â§Ã˜Â¯/Ã˜Â§Ã™â€žÃ˜Â¨Ã˜ÂµÃ˜Â±Ã˜Â©Ã˜Å’ Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã™â€ Ã˜Â³Ã™Ë†Ã™Å Ã˜Å¸`;
+        return `مرحباً، وصلتنا رسالة شاكو ماكو. نريد نضيف المنيو والصور مالتنا بقسم بغداد/البصرة، شلون نسوي؟`;
       case "Hotel":
-        return `Ã˜Â³Ã™â€žÃ˜Â§Ã™Ë† Ã™Ë†Ã˜Â¨Ã˜Â®Ã™Å Ã˜Â± Ã™â€¡Ã˜Â§Ã˜ÂªÃ˜Â¨Ã™Å Ã™â€ .. Ã˜Â´Ã™Æ’Ã˜Â±Ã˜Â§Ã™â€¹ Ã™â€žÃ™Æ’Ã™â€¦. Ã™â€¡Ã™â€ž Ã˜ÂªÃ™Ë†Ã˜Â¬Ã˜Â¯ Ã˜Â¨Ã˜Â§Ã™â€šÃ˜Â© Ã˜Â§Ã˜Â´Ã˜ÂªÃ˜Â±Ã˜Â§Ã™Æ’ Ã˜Â³Ã™â€ Ã™Ë†Ã™Å Ã˜Â© Ã™â€¦Ã™â€¦Ã˜ÂªÃ˜Â§Ã˜Â²Ã˜Â© Ã™â€žÃ™ÂÃ™â€ Ã˜Â¯Ã™â€š ${cleaningName} Ã™ÂÃ™Å  Ã™Æ’Ã˜Â±Ã˜Â¯Ã˜Â³Ã˜ÂªÃ˜Â§Ã™â€ Ã˜Å¸`;
+        return `سلاو وبخير هاتبين.. شكراً لكم. هل توجد باقة اشتراك سنوية ممتازة لفندق ${cleaningName} في كردستان؟`;
       case "Beauty Salon":
-        return `Ã™ÂÃ˜Â¯Ã™Ë†Ã˜Â© Ã˜Â¯Ã˜Â²Ã™Ë†Ã™â€žÃ™â€ Ã˜Â§ Ã˜ÂªÃ™ÂÃ˜Â§Ã˜ÂµÃ™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¹Ã˜Â±Ã˜Â¶ Ã™Ë†Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã™â€ Ã™Ë†Ã˜Â«Ã™â€š Ã˜Â§Ã™â€žÃ™â€žÃ™Ë†Ã™Æ’Ã™Å Ã˜Â´Ã™â€  Ã™â€¦Ã˜Â§Ã™â€žÃ˜ÂªÃ™â€ Ã˜Â§ Ã™Ë†Ã™â€ Ã˜Â¶Ã™Å Ã™Â Ã™â€¦Ã™Å Ã˜Â²Ã˜Â§Ã˜Âª Ã˜ÂµÃ˜Â§Ã™â€žÃ™Ë†Ã™â€  Ã˜Â§Ã™â€žÃ˜Â­Ã™â€žÃ˜Â§Ã™â€šÃ˜Â©Ã˜Å¸`;
+        return `فدوة دزولنا تفاصيل العرض وشلون نوثق اللوكيشن مالتنا ونضيف ميزات صالون الحلاقة؟`;
       case "Pharmacy":
-        return `Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ˜Â§Ã™â€¦ Ã˜Â¹Ã™â€žÃ™Å Ã™Æ’Ã™â€¦Ã˜Å’ Ã™â€¡Ã™â€ž Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â§Ã˜Â¯Ã˜Â±Ã˜Â§Ã˜Â¬ Ã™â€¦Ã˜Â¬Ã˜Â§Ã™â€ Ã™Å  Ã™â€žÃ™â€žÃ˜Â£Ã˜Â¨Ã˜Â¯ Ã™â€žÃ™Ë† Ã˜Â§Ã™Æ’Ã™Ë† Ã˜Â§Ã˜Â´Ã˜ÂªÃ˜Â±Ã˜Â§Ã™Æ’Ã˜Â§Ã˜Âª Ã™â€¦Ã˜Â®Ã™ÂÃ™Å Ã˜Â© Ã˜Â¨Ã˜Â¹Ã˜Â¯ Ã™ÂÃ˜ÂªÃ˜Â±Ã˜Â©Ã˜Å¸ Ã˜Â´Ã™Æ’Ã˜Â±Ã˜Â§Ã™â€¹ Ã™â€žÃ˜Â¬Ã™â€¡Ã™Ë†Ã˜Â¯Ã™Æ’Ã™â€¦.`;
+        return `السلام عليكم، هل التسجيل والادراج مجاني للأبد لو اكو اشتراكات مخفية بعد فترة؟ شكراً لجهودكم.`;
       case "Clinic":
-        return `Ã™â€¦Ã˜Â±Ã˜Â­Ã˜Â¨Ã˜Â§Ã™â€¹ Ã˜Â¨Ã™Æ’Ã˜Å’ Ã™â€ Ã˜Â­Ã™â€  Ã˜Â¹Ã™Å Ã˜Â§Ã˜Â¯Ã˜Â© Ã˜Â·Ã˜Â¨Ã™Å Ã˜Â© Ã™â€¦Ã˜ÂªÃ™Æ’Ã˜Â§Ã™â€¦Ã™â€žÃ˜Â©. Ã™â€ Ã™Ë†Ã˜Â¯ Ã˜Â§Ã™â€žÃ˜Â­Ã˜ÂµÃ™Ë†Ã™â€ž Ã˜Â¹Ã™â€žÃ™â€° Ã˜ÂªÃ™ÂÃ˜Â§Ã˜ÂµÃ™Å Ã™â€ž Ã˜Â¥Ã˜Â¶Ã˜Â§Ã™ÂÃ™Å Ã˜Â© Ã˜Â­Ã™Ë†Ã™â€ž Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â±Ã™Ë†Ã™Å Ã˜Â¬ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¨Ã˜Â§Ã˜Â´Ã˜Â±.`;
+        return `مرحباً بك، نحن عيادة طبية متكاملة. نود الحصول على تفاصيل إضافية حول الترويج المباشر.`;
       default:
-        return `Ã˜Â£Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹ Ã™Ë†Ã˜Â³Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹ Ã˜Â¹Ã™Å Ã™Ë†Ã™â€ Ã™Å Ã˜Å’ Ã™â€¦Ã™â€¡Ã˜ÂªÃ™â€¦Ã™Å Ã™â€  Ã˜Â¬Ã˜Â¯Ã˜Â§Ã™â€¹ Ã˜Â¨Ã˜Â§Ã™â€žÃ˜Â§Ã™â€ Ã˜Â¶Ã™â€¦Ã˜Â§Ã™â€¦ Ã™â€žÃ™â€žÃ˜Â¯Ã™â€žÃ™Å Ã™â€ž Ã™â€¦Ã˜Â¹ Ã™â€¦Ã™â€ Ã˜ÂµÃ˜ÂªÃ™Æ’Ã™â€¦ Ã˜Â´Ã˜Â§Ã™Æ’Ã™Ë† Ã™â€¦Ã˜Â§Ã™Æ’Ã™Ë†. Ã˜Â¨Ã˜Â§Ã™â€ Ã˜ÂªÃ˜Â¸Ã˜Â§Ã˜Â± Ã˜Â§Ã™â€žÃ˜ÂªÃ™ÂÃ˜Â§Ã˜ÂµÃ™Å Ã™â€ž Ã˜Â®Ã˜Â·Ã™Ë†Ã˜Â© Ã˜Â¨Ã˜Â®Ã˜Â·Ã™Ë†Ã˜Â©.`;
+        return `أهلاً وسهلاً عيوني، مهتمين جداً بالانضمام للدليل مع منصتكم شاكو ماكو. بانتظار التفاصيل خطوة بخطوة.`;
     }
   };
 
-  // Ã¢Å¡Â¡ Active Dispatch Interval Engine (Background Simulated Webhook Worker)
+  // ⚡ Active Dispatch Interval Engine (Background Simulated Webhook Worker)
   useEffect(() => {
     // Find first campaign that is running
     const activeCamp = campaigns.find(c => c.status === "running");
@@ -348,73 +309,53 @@ export default function App() {
   }, [campaigns, contacts, templates]);
 
 
-  // Manual Single WhatsApp Dry-Run Send through Cloudflare Worker
-  const handleSimulateSingleSend = async (contactId: string, templateId: string) => {
+  // ⚡ Manual Single WhatsApp Sim Send
+  const handleSimulateSingleSend = (contactId: string, templateId: string) => {
     const contact = contacts.find(c => c.id === contactId);
     const template = templates.find(t => t.id === templateId) || templates[0];
+    if (!contact) return;
 
-    if (!contact || !template) return;
+    setContacts(p => p.map(c => {
+      if (c.id === contactId) {
+        return {
+          ...c,
+          lastMessageStatus: "sent",
+          leadStage: LeadStage.SENT,
+          assignedTemplateId: templateId,
+          updatedAt: new Date().toISOString()
+        };
+      }
+      return c;
+    }));
 
-    try {
-      const result = await apiPost("/api/send-one", {
+    // Raise outbound sent event
+    const mId = `msg_single_${Date.now()}`;
+    setEvents(p => [
+      {
+        id: `sim_sv_${Date.now()}`,
+        eventId: `evt_nabda_${Math.floor(Math.random() * 900000) + 100000}`,
+        eventType: "message.sent",
         phone: contact.phone,
-        message: template.text,
-        businessName: contact.businessName,
-        dryRun: true
-      });
+        messageId: mId,
+        status: "sent",
+        timestamp: new Date().toISOString(),
+        payload: { messageId: mId, to: contact.phone, text: template.text, api: "manual" }
+      },
+      ...p
+    ]);
 
-      setContacts(p => p.map(c => {
-        if (c.id === contactId) {
-          return {
-            ...c,
-            lastMessageStatus: "sent",
-            leadStage: LeadStage.SENT,
-            assignedTemplateId: templateId,
-            notes: `${c.notes || ""}\n[Dry Run] Worker accepted test send. No real WhatsApp message was sent.`,
-            updatedAt: new Date().toISOString()
-          };
-        }
+    // Progressive delivered and read receipt timeouts
+    setTimeout(() => {
+      setContacts(p => p.map(c => c.id === contactId ? { ...c, lastMessageStatus: "delivered", leadStage: LeadStage.DELIVERED } : c));
+    }, 1000);
 
-        return c;
-      }));
-
-      const mId = `msg_worker_dry_${Date.now()}`;
-
-      setEvents(p => [
-        {
-          id: `worker_dry_${Date.now()}`,
-          eventId: `evt_worker_dry_${Math.floor(Math.random() * 900000) + 100000}`,
-          eventType: "message.sent",
-          phone: contact.phone,
-          messageId: mId,
-          status: "sent",
-          timestamp: new Date().toISOString(),
-          payload: {
-            messageId: mId,
-            to: contact.phone,
-            text: template.text,
-            api: "worker",
-            dryRun: true,
-            workerResponse: result
-          }
-        },
-        ...p
-      ]);
-
-      alert("Dry-run saved to D1 logs. No real WhatsApp message was sent.");
-    } catch (error: any) {
-      setContacts(p => p.map(c => c.id === contactId ? {
-        ...c,
-        lastMessageStatus: "failed",
-        notes: `${c.notes || ""}\n[Dry Run Failed] ${error?.message || "Unknown error"}`,
-        updatedAt: new Date().toISOString()
-      } : c));
-
-      alert(`Dry-run failed: ${error?.message || "Unknown error"}`);
-    }
+    setTimeout(() => {
+      setContacts(p => p.map(c => c.id === contactId ? { ...c, lastMessageStatus: "read", leadStage: LeadStage.READ } : c));
+    }, 2200);
   };
 
-  // Leads Stage Manual override
+
+  // ✍️ Leads Stage Manual override
   const handleUpdateLeadStage = (id: string, stage: LeadStage) => {
     setContacts(prev => prev.map(c => {
       if (c.id === id) {
@@ -446,7 +387,7 @@ export default function App() {
     }));
   };
 
-  // Ã¢Å¾â€¢ Create Contact Manual Onboarding
+  // ➕ Create Contact Manual Onboarding
   const handleAddContact = (newContact: Omit<Contact, "id" | "updatedAt">) => {
     const contactRecord: Contact = {
       ...newContact,
@@ -457,7 +398,7 @@ export default function App() {
   };
 
 
-  // Ã¢Å¾â€¢ Create Campaign
+  // ➕ Create Campaign
   const handleCreateCampaign = (campData: Omit<Campaign, "id" | "totalSent" | "delivered" | "read" | "replied" | "interested" | "registered" | "createdAt" | "status">) => {
     const newCamp: Campaign = {
       ...campData,
@@ -479,7 +420,7 @@ export default function App() {
   };
 
 
-  // Ã¢Å¾â€¢ Create template
+  // ➕ Create template
   const handleCreateTemplate = (tempData: Omit<MessageTemplate, "id">) => {
     const newTemp: MessageTemplate = {
       ...tempData,
@@ -493,7 +434,7 @@ export default function App() {
   };
 
 
-  // Ã°Å¸â€œÂ¥ Micro action Inbox Macros
+  // 📥 Micro action Inbox Macros
   const handleMarkInterested = (phone: string) => {
     setContacts(prev => prev.map(c => c.phone === phone ? { ...c, leadStage: LeadStage.INTERESTED, updatedAt: new Date().toISOString() } : c));
     setInbox(prev => prev.map(m => m.phone === phone ? { ...m, isRead: true } : m));
@@ -521,7 +462,7 @@ export default function App() {
         messageId: `msg_reglink_${Date.now()}`,
         status: "sent",
         timestamp: new Date().toISOString(),
-        payload: { text: "Ã˜Â¹Ã˜Â²Ã™Å Ã˜Â²Ã™Å Ã˜Å’ Ã™â€¡Ã˜Â°Ã˜Â§ Ã™â€¡Ã™Ë† Ã˜Â±Ã˜Â§Ã˜Â¨Ã˜Â· Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™ÂÃ™Ë†Ã˜Â±Ã™Å  Ã™ÂÃ™Å  Ã™â€¦Ã™â€ Ã˜ÂµÃ˜Â© Ã˜Â´Ã˜Â§Ã™Æ’Ã™Ë† Ã™â€¦Ã˜Â§Ã™Æ’Ã™Ë†: https://shakumaku.iq/signup", type: "text_cta" }
+        payload: { text: "عزيزي، هذا هو رابط التسجيل الفوري في منصة شاكو ماكو: https://shakumaku.iq/signup", type: "text_cta" }
       },
       ...p
     ]);
@@ -549,7 +490,7 @@ export default function App() {
   };
 
 
-  // Ã°Å¸â€™Â¬ Inject Simulated Random Incoming Message
+  // 💬 Inject Simulated Random Incoming Message
   const handleTriggerSimulatedReply = (customText?: string) => {
     // Pick first contact that has received messages but hasn't replied yet, or fallback to standard
     const activeCandidates = contacts.filter(c => c.lastMessageStatus !== "none" && c.leadStage !== LeadStage.REGISTERED);
@@ -557,7 +498,7 @@ export default function App() {
       ? activeCandidates[Math.floor(Math.random() * activeCandidates.length)]
       : contacts[0];
 
-    const messageText = customText || "Ã˜Â£Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹Ã˜Å’ Ã˜Â­Ã˜Â§Ã˜Â¨Ã™Å Ã™â€  Ã™â€ Ã˜Â´Ã˜ÂªÃ˜Â±Ã™Æ’ Ã™Ë†Ã™Å Ã˜Â§Ã™Æ’Ã™â€¦. Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã˜Â·Ã˜Â±Ã™Å Ã™â€šÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â¯Ã™ÂÃ˜Â¹ Ã™â€žÃ™Ë† Ã™â€¦Ã˜Â¬Ã˜Â§Ã™â€ Ã™Å Ã˜Å¸";
+    const messageText = customText || "أهلاً، حابين نشترك وياكم. شلون طريقة الدفع لو مجاني؟";
     
     setContacts(p => p.map(c => c.id === chosenContact.id ? { 
       ...c, 
@@ -600,6 +541,8 @@ export default function App() {
   // Render correct sub-dashboard view
   const renderViewContent = () => {
     switch (activeSection) {
+      case "bulksender":
+        return <BulkSenderView lang={lang} />;
       case "dashboard":
         return (
           <DashboardView 
@@ -767,4 +710,3 @@ export default function App() {
     </div>
   );
 }
-

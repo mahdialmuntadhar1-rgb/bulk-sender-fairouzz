@@ -40,6 +40,13 @@ export default function Sidebar({
   const menuItems = [
     // Group 1: Core CRM
     {
+      id: "bulksender",
+      labelAr: "المرسل الجماعي الفائق ✨",
+      labelEn: "Super Bulk Sender ✨",
+      icon: SendHorizontal,
+      group: "crm"
+    },
+    {
       id: "dashboard",
       labelAr: "لوحة التحكم الرئيسية",
       labelEn: "Dashboard Overview",

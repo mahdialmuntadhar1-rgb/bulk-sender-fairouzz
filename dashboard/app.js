@@ -555,3 +555,232 @@ async function loadHistoryReports() {
     container.innerHTML = `<p class="text-[11px] text-slate-500 italic">Connected in standalone offline mode.</p>`;
   }
 }
+
+// ARABIC TRANSLITERATION DICTIONARY FOR HIGH QUALITY PDF GENERATION
+const ARABIC_MAPPING_DICTIONARY = {
+  "بغداد": "Baghdad",
+  "البصرة": "Basra",
+  "نينوى": "Nineveh",
+  "أربيل": "Erbil",
+  "السليمانية": "Sulaymaniyah",
+  "بابل": "Babylon",
+  "كربلاء": "Karbala",
+  "النجف": "Najaf",
+  "الأنبار": "Anbar",
+  "كركوك": "Kirkuk",
+  "دهوك": "Duhok",
+  "مطعم": "Restaurant",
+  "مقهى": "Cafe",
+  "فندق": "Hotel",
+  "صالون تجميل": "Beauty Salon",
+  "صيدلية": "Pharmacy",
+  "عيادة طبية": "Clinic",
+  "محلنا العزيز": "Dear merchant",
+  "العسكري": "Al-Asgari"
+};
+
+function cleanAndSanitizeForPDF(str) {
+  if (!str) return "";
+  let clean = String(str);
+  for (const [ar, en] of Object.entries(ARABIC_MAPPING_DICTIONARY)) {
+    const rx = new RegExp(ar, "gi");
+    clean = clean.replace(rx, en);
+  }
+  // Replace remaining non-ascii symbols with whitespace or simplified forms
+  return clean.replace(/[^\x00-\x7F]/g, "");
+}
+
+// GENERATE FORMATTED PDF SUMMARY OF CAMPAIGN PERFORMANCE
+window.generateReportPDF = async function() {
+  const { jsPDF } = window.jspdf || {};
+  if (!jsPDF) {
+    alert("The PDF generation library has not loaded yet. Please check your internet connection.");
+    return;
+  }
+
+  try {
+    const doc = new jsPDF();
+    let y = 45;
+
+    // Header Panel Top Banner
+    doc.setFillColor(13, 15, 20); // Deep Dark Slate #0D0F14
+    doc.rect(0, 0, 210, 35, "F");
+
+    // Gold branding Accent Header Element
+    doc.setFillColor(197, 160, 89); // #C5A059
+    doc.rect(0, 35, 210, 2, "F");
+
+    doc.setTextColor(197, 160, 89);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(18);
+    doc.text("NABDA WABA BULK SENDER", 15, 18);
+
+    doc.setTextColor(255, 255, 255);
+    doc.setFont("helvetica", "normal");
+    doc.setFontSize(9);
+    doc.text("BROADCAST PERFORMANCE STATISTICAL ANALYSIS LEDGER REPORT", 15, 25);
+
+    doc.setTextColor(142, 146, 153);
+    doc.setFontSize(8);
+    doc.text(`Run Date & Time: ${new Date().toLocaleString()} (UTC)`, 135, 25);
+
+    // Section 1: Active Run Sessions Report
+    doc.setTextColor(13, 15, 20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("1. CURRENT WORKSPACE SESSION", 15, y);
+    y += 6;
+
+    const sent = filteredRecords.filter(r => r.status === "Sent").length;
+    const failed = filteredRecords.filter(r => r.status === "Failed").length;
+    const skipped = filteredRecords.filter(r => r.status === "Skipped" || r.status === "DND").length;
+    const total = filteredRecords.length;
+    const remaining = total - (sent + failed + skipped);
+
+    const totalProcessed = sent + failed;
+    const successRatio = totalProcessed > 0 ? ((sent / totalProcessed) * 100).toFixed(1) : "0.0";
+
+    if (total === 0) {
+      doc.setFont("helvetica", "italic");
+      doc.setFontSize(9.5);
+      doc.setTextColor(120, 120, 120);
+      doc.text("Empty Workspace. Run some broadcasts or import a CSV list to query metrics.", 18, y + 4);
+      y += 12;
+    } else {
+      // Background Box for statistics cards
+      doc.setFillColor(245, 246, 248);
+      doc.rect(15, y, 180, 28, "F");
+
+      doc.setTextColor(33, 37, 41);
+      doc.setFont("helvetica", "bold");
+      doc.setFontSize(9.5);
+      doc.text(`Total Target Pool: ${total}`, 20, y + 8);
+      doc.text(`Sent Successfully: ${sent}`, 20, y + 16);
+      doc.text(`Success Rate Ratio: ${successRatio}%`, 20, y + 24);
+
+      doc.text(`Failed Dispatches: ${failed}`, 110, y + 8);
+      doc.text(`Skipped / Opt-out: ${skipped}`, 110, y + 16);
+      doc.text(`Unsent / Remaining: ${remaining}`, 110, y + 24);
+
+      y += 35;
+    }
+
+    // Divider Line
+    doc.setDrawColor(220, 222, 226);
+    doc.line(15, y, 195, y);
+    y += 8;
+
+    // Section 2: Historical Campaigns Records Index Table
+    doc.setTextColor(13, 15, 20);
+    doc.setFont("helvetica", "bold");
+    doc.setFontSize(11);
+    doc.text("2. PAST COMPLETED CAMPAIGNS LEDGER INDEX", 15, y);
+    y += 6;
+
+    // Get statistics from server database
+    const res = await fetch(`${apiBase}/api/history`);
+    if (res.ok) {
+      const history = await res.json();
+      if (!history || history.length === 0) {
+        doc.setFont("helvetica", "italic");
+        doc.setFontSize(9.5);
+        doc.setTextColor(120, 120, 120);
+        doc.text("No past campaigns recorded in the relational database ledger.", 18, y + 4);
+        y += 12;
+      } else {
+        // Render Header
+        doc.setFillColor(197, 160, 89);
+        doc.rect(15, y, 180, 7, "F");
+
+        doc.setFont("helvetica", "bold");
+        doc.setFontSize(8);
+        doc.setTextColor(10, 11, 14);
+        doc.text("Campaign Broadcast Detail Tag", 18, y + 5);
+        doc.text("Date Created", 85, y + 5);
+        doc.text("Sent", 130, y + 5);
+        doc.text("Failed", 145, y + 5);
+        doc.text("Skipped", 160, y + 5);
+        doc.text("Status", 178, y + 5);
+        
+        y += 7;
+
+        doc.setFont("helvetica", "normal");
+        doc.setFontSize(8);
+
+        history.forEach((run, index) => {
+          if (y > 260) {
+            // Page Overflow Protection
+            doc.addPage();
+            y = 20;
+            // Draw continuing header
+            doc.setFillColor(197, 160, 89);
+            doc.rect(15, y, 180, 7, "F");
+            doc.setFont("helvetica", "bold");
+            doc.setTextColor(10, 11, 14);
+            doc.text("Campaign Broadcast Detail Tag", 18, y + 5);
+            doc.text("Date Created", 85, y + 5);
+            doc.text("Sent", 130, y + 5);
+            doc.text("Failed", 145, y + 5);
+            doc.text("Skipped", 160, y + 5);
+            doc.text("Status", 178, y + 5);
+            y += 7;
+            doc.setFont("helvetica", "normal");
+          }
+
+          if (index % 2 === 1) {
+            doc.setFillColor(245, 246, 248);
+            doc.rect(15, y, 180, 7.5, "F");
+          } else {
+            doc.setFillColor(255, 255, 255);
+            doc.rect(15, y, 180, 7.5, "F");
+          }
+
+          doc.setTextColor(33, 37, 41);
+          let rawName = run.name || "Bulk Campaign Scheduler";
+          let cleanName = cleanAndSanitizeForPDF(rawName);
+          if (cleanName.length > 35) cleanName = cleanName.slice(0, 32) + "...";
+          doc.text(cleanName, 18, y + 5);
+
+          const timeString = new Date(run.timestamp).toLocaleString();
+          doc.text(timeString, 85, y + 5);
+          doc.text(String(run.sent || 0), 130, y + 5);
+          doc.text(String(run.failed || 0), 145, y + 5);
+          doc.text(String(run.skipped || 0), 160, y + 5);
+
+          if (run.status === "Completed") {
+            doc.setTextColor(46, 117, 89); // emerald style
+          } else {
+            doc.setTextColor(197, 120, 50); // amber style
+          }
+          doc.text(run.status || "Stopped", 178, y + 5);
+
+          y += 7.5;
+        });
+      }
+    } else {
+      doc.setFont("helvetica", "italic");
+      doc.text("Database Connection Interrupted. Unable to retrieve past runs statistics.", 15, y);
+      y += 10;
+    }
+
+    // Footnote Section
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setDrawColor(220, 222, 226);
+      doc.line(15, 277, 195, 277);
+
+      doc.setTextColor(142, 146, 153);
+      doc.setFontSize(7.5);
+      doc.setFont("helvetica", "normal");
+      doc.text("Confidential Performance Audit Report generated for internal business tracking purposes.", 15, 282);
+      doc.text(`Nabda WABA Bulk Sender Protocol Ledger. Page ${i} of ${pageCount}`, 15, 286);
+    }
+
+    // Save with precise timestamp
+    doc.save(`Nabda_WABA_Performance_Report_${Date.now()}.pdf`);
+  } catch (err) {
+    alert(`Failed to export PDF: ${err.message}`);
+  }
+};
+

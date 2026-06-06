@@ -8,6 +8,8 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <!-- Lucide Icons CDN -->
   <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- jsPDF CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
   <style>
     body {
@@ -293,7 +295,7 @@
             
             <!-- Download Buttons -->
             <div class="space-y-2.5 bg-[#191D24] p-4 rounded-xl border border-[#2D3139]">
-              <p class="text-xs text-slate-400 font-bold block">Download Live Transaction CSVs</p>
+              <p class="text-xs text-slate-400 font-bold block">Download Live Transaction CSVs / Reports</p>
               <div class="grid grid-cols-3 gap-2">
                 <button type="button" onclick="downloadLogFile('sent')" class="bg-[#111827] text-emerald-400 hover:bg-emerald-500/10 border border-emerald-500/15 py-2 rounded text-[11px] font-bold transition flex items-center justify-center gap-1">
                   <i data-lucide="download" class="w-3.5 h-3.5"></i> Sent
@@ -305,6 +307,9 @@
                   <i data-lucide="download" class="w-3.5 h-3.5"></i> Skipped
                 </button>
               </div>
+              <button type="button" onclick="generateReportPDF()" class="w-full bg-[#C5A059]/10 hover:bg-[#C5A059]/25 border border-[#C5A059]/20 text-[#C5A059] text-[11px] font-bold py-2 px-3 rounded-lg transition flex items-center justify-center gap-1.5 mt-3 shadow-sm shadow-[#C5A059]/5 cursor-pointer">
+                <i data-lucide="file-text" class="w-3.5 h-3.5 text-[#C5A059]"></i> Generate & Download Report PDF
+              </button>
             </div>
 
             <!-- Manual Exclude Blacklist -->

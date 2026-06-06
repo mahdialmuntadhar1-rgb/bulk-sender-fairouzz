@@ -12,7 +12,8 @@ import {
   ArrowUpRight,
   UserCheck,
   Send,
-  PlusCircle
+  PlusCircle,
+  Download
 } from "lucide-react";
 import { ReplyInboxItem, Contact, LeadStage } from "../types";
 
@@ -48,6 +49,39 @@ export default function RepliesInboxView({
     setSelectedReply(reply);
     setNoteText(reply.notes || "");
     setTypedReplyText("");
+  };
+
+  const handleDownloadCSV = () => {
+    if (replies.length === 0) {
+      showFeedback(lang === "ar" ? "لا توجد رسائل لتصديرها!" : "No replies to export!");
+      return;
+    }
+
+    // Header row
+    const headers = ["Timestamp", "Business Name", "Phone", "Reply Text", "Campaign Name"];
+    
+    // Row mapping with proper backslash/quote escape wrapper
+    const rows = replies.map(r => [
+      new Date(r.timestamp).toISOString(),
+      `"${(r.businessName || "").replace(/"/g, '""')}"`,
+      `"${(r.phone || "").replace(/"/g, '""')}"`,
+      `"${(r.messageText || "").replace(/"/g, '""')}"`,
+      `"${(r.campaignName || "Single Test Message").replace(/"/g, '""')}"`
+    ]);
+
+    // Use UTF-8 BOM so spreadsheet applications display Arabic/Unicode text properly
+    const csvContent = "\uFEFF" + [headers.join(","), ...rows.map(row => row.join(","))].join("\n");
+
+    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.setAttribute("download", `replies_export_${new Date().toISOString().slice(0, 10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+
+    showFeedback(lang === "ar" ? "تم تحميل ملف CSV بنجاح!" : "CSV Downloaded Successfully!");
   };
 
   const currentContact = selectedReply 
@@ -132,9 +166,20 @@ export default function RepliesInboxView({
         
         {/* Chats Inbox list (Column 1) */}
         <div className="bg-[#14171D] border border-white/5 rounded-2xl p-4 md:p-5 lg:col-span-1 space-y-4 flex flex-col h-[520px] shadow-xl">
-          <h3 className="text-xs font-bold text-[#8E9299] uppercase tracking-wider pb-3 border-b border-white/5 font-sans">
-            {txt.msgInboundList} ({replies.length})
-          </h3>
+          <div className="flex items-center justify-between pb-3 border-b border-white/5">
+            <h3 className="text-xs font-bold text-[#8E9299] uppercase tracking-wider font-sans">
+              {txt.msgInboundList} ({replies.length})
+            </h3>
+            <button
+              id="btn_download_replies_csv"
+              onClick={handleDownloadCSV}
+              className="bg-[#191D24] text-[#C5A059] hover:bg-[#C5A059]/10 border border-[#2D3139] hover:border-[#C5A059] px-2.5 py-1.5 rounded-lg text-[10px] font-bold transition flex items-center gap-1.5 shrink-0 font-sans cursor-pointer"
+              title={lang === "ar" ? "تصدير إلى ملف CSV" : "Export to CSV"}
+            >
+              <Download size={11} />
+              {lang === "ar" ? "تصدير CSV" : "Export CSV"}
+            </button>
+          </div>
 
           <div className="divide-y divide-white/5 overflow-y-auto flex-1 space-y-2 pr-1">
             {replies.length === 0 ? (

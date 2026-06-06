@@ -1,4 +1,4 @@
-﻿import React, { useState, useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import Sidebar from "./components/Sidebar";
 import DashboardView from "./components/DashboardView";
 import CampaignsView from "./components/CampaignsView";
@@ -15,6 +15,7 @@ import MediaManagerView from "./components/MediaManagerView";
 import BundlesView from "./components/BundlesView";
 import WhatsAppInstancesView from "./components/WhatsAppInstancesView";
 import BillingSecurityView from "./components/BillingSecurityView";
+import { apiGet } from "./apiClient";
 
 import { 
   LeadStage, 

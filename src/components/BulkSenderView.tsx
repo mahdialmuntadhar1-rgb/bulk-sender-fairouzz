@@ -184,11 +184,13 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   const [filterStatus, setFilterStatus] = useState("All");
   const [searchTerm, setSearchTerm] = useState("");
 
-  const sendingRef = useRef({ isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds });
+  const [isDemoMode, setIsDemoMode] = useState(false);
+
+  const sendingRef = useRef({ isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds, isDemoMode });
 
   useEffect(() => {
-    sendingRef.current = { isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds };
-  }, [isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds]);
+    sendingRef.current = { isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds, isDemoMode };
+  }, [isSendingActive, sendingPaused, queue, activeQueueIndex, delaySeconds, isDemoMode]);
 
   // Sync Persistence to storage
   useEffect(() => {
@@ -658,13 +660,27 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       return;
     }
 
+    let runAsDemo = isDemoMode;
+    if (nabdaStatus !== "connected" && !isDemoMode) {
+      const confirmDemo = window.confirm(
+        lang === "ar"
+          ? "تنبيه: بوابة الإرسال غير متصلة (أو مفتاح الـ API للنبضة غير مهيأ في الإعدادات العميقة).\n\nهل تريد تشغيل البث في وضع المحاكاة والتدريب السريع (Demo Simulation Mode)؟\nسيسمح لك هذا برؤية شريط التقدم وعدادات الإحصائيات وسجلات البث تعمل بشكل تفاعلي بالكامل!"
+          : "Notice: Dispatch gateway not connected (or NABDA_API_KEY is not configured yet).\n\nWould you like to run this campaign in Sandbox Demo Simulation Mode?\nThis will allow you to watch the interactive progression bar, stats metrics, and active ledger run in real time!"
+      );
+      if (confirmDemo) {
+        runAsDemo = true;
+        setIsDemoMode(true);
+      }
+    }
+
     // Set Ref values direct to prevent execution timing races or state synchronicity lag
     sendingRef.current = {
       isSendingActive: true,
       sendingPaused: false,
       queue: activeQueue,
       activeQueueIndex: null,
-      delaySeconds
+      delaySeconds,
+      isDemoMode: runAsDemo
     };
 
     setIsSendingActive(true);
@@ -702,27 +718,41 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "sending" } : q));
     appendConsoleLog(`Sending payload to ${item.normalizedPhone}...`);
 
-    try {
-      const response = await fetch("/api/send", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          phone: item.normalizedPhone,
-          message: customMsg,
-          businessName: item.businessName
-        })
-      });
-
-      const data = await response.json();
-      if (response.ok) {
-        setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "sent", note: data.response?.messageId || "Delivered" } : q));
-        appendConsoleLog(`🟢 Delivered safely to ${item.normalizedPhone}`);
+    if (state.isDemoMode) {
+      // Simulation mode delay block
+      await new Promise(resolve => setTimeout(resolve, 800));
+      // Simulate success (96%) and failures (4%)
+      const isSuccessSim = Math.random() < 0.96;
+      if (isSuccessSim) {
+        setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "sent", note: "Sim-ID-" + Math.floor(100000 + Math.random() * 900000) } : q));
+        appendConsoleLog(`🟢 [Demo Simulation] Message delivered to ${item.normalizedPhone}`);
       } else {
-        throw new Error(data.error || "Nabda Host rejected");
+        setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "failed", note: "Simulated busy line signal" } : q));
+        appendConsoleLog(`🔴 [Demo Simulation] Message failed to ${item.normalizedPhone}: Simulated busy line signal`);
       }
-    } catch (err: any) {
-      setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "failed", note: err.message || "Timeout" } : q));
-      appendConsoleLog(`🔴 Transmission Failed to ${item.normalizedPhone}: ${err.message}`);
+    } else {
+      try {
+        const response = await fetch("/api/send", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            phone: item.normalizedPhone,
+            message: customMsg,
+            businessName: item.businessName
+          })
+        });
+
+        const data = await response.json();
+        if (response.ok) {
+          setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "sent", note: data.response?.messageId || "Delivered" } : q));
+          appendConsoleLog(`🟢 Delivered safely to ${item.normalizedPhone}`);
+        } else {
+          throw new Error(data.error || "Nabda Host rejected");
+        }
+      } catch (err: any) {
+        setQueue(prev => prev.map((q, i) => i === targetIdx ? { ...q, status: "failed", note: err.message || "Timeout" } : q));
+        appendConsoleLog(`🔴 Transmission Failed to ${item.normalizedPhone}: ${err.message}`);
+      }
     }
 
     setTimeout(() => dispatchNextRow(), delaySeconds * 1000);
@@ -853,11 +883,27 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
               </span>
             )}
             {nabdaStatus === "error" && (
-              <span className="flex items-center gap-1 text-red-400 font-bold bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 text-[11px]" title={nabdaErrorDetails}>
+              <span className="flex items-center gap-1 text-red-405 font-bold bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 text-[11px]" title={nabdaErrorDetails}>
                 ⚠️ {lang === "ar" ? "خطأ اتصال" : "Nabda Port Error"}
               </span>
             )}
           </div>
+
+          {/* Sandbox Simulation Mode Toggle */}
+          <button
+            onClick={() => {
+              setIsDemoMode(!isDemoMode);
+              appendConsoleLog(`Simulation/Sandbox mode ${!isDemoMode ? "ENABLED ✔" : "DISABLED ✘"}`);
+            }}
+            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition duration-200 cursor-pointer ${
+              isDemoMode 
+                ? "bg-amber-500/15 text-amber-400 border-amber-500/30 font-extrabold shadow-lg shadow-amber-500/5 hover:bg-amber-500/20" 
+                : "bg-slate-800/40 text-slate-400 border-slate-755 hover:bg-slate-800/80 hover:text-white"
+            }`}
+          >
+            <span>✨ {lang === "ar" ? "محاكاة الإرسال" : "Sandbox Simulation"}</span>
+            <span className={`w-2 h-2 rounded-full ${isDemoMode ? "bg-amber-400 animate-pulse" : "bg-slate-500"}`}></span>
+          </button>
 
           <button
             onClick={() => {
@@ -1441,8 +1487,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
               {!isSendingActive ? (
                 <button
                   onClick={startSendingProcess}
-                  disabled={nabdaStatus !== "connected" && nabdaStatus !== "idle"}
-                  className="w-full md:w-auto bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-6 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/10 cursor-pointer disabled:opacity-40"
+                  className="w-full md:w-auto bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-6 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/10 cursor-pointer"
                 >
                   <Play size={13} fill="#020617" />
                   <span>{lang === "ar" ? "▶ بدء بث الإرسال الجماعي" : "▶ Start Broadcast"}</span>

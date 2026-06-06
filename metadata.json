@@ -1,0 +1,6 @@
+{
+  "name": "Shaku Maku WhatsApp CRM",
+  "description": "WhatsApp marketing and sales funnel tracker with A/B testing and Nabda API integration for Iraqi business outreach.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

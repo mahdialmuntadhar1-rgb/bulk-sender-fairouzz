@@ -4,3 +4,4 @@ dist/
 .env.*
 !.env.example
 *.log
+admin_token_local_only.txt

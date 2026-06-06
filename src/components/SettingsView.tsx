@@ -10,7 +10,10 @@ import {
   Save, 
   ExternalLink,
   Shield,
-  Shuffle
+  Shuffle,
+  Eye,
+  EyeOff,
+  AlertCircle
 } from "lucide-react";
 import { NabdaSettings } from "../types";
 
@@ -25,7 +28,6 @@ export default function SettingsView({
   lang,
   onSaveSettings
 }: SettingsViewProps) {
-  const [apiKey, setApiKey] = useState(settings.apiKey);
   const [sendEndpoint, setSendEndpoint] = useState(settings.sendEndpoint);
   const [webhookUrl, setWebhookUrl] = useState(settings.webhookUrl);
   const [bundleApiKey, setBundleApiKey] = useState(settings.bundleApiKey);
@@ -33,8 +35,14 @@ export default function SettingsView({
   const [maxMessagesPerBatch, setMaxMessagesPerBatch] = useState(settings.maxMessagesPerBatch);
   const [enableRotation, setEnableRotation] = useState(settings.enableRotation);
 
+  // Secure Server Key States
+  const [secureKey, setSecureKey] = useState("");
+  const [isKeyConfigured, setIsKeyConfigured] = useState(false);
+  const [isSecKeySaving, setIsSecKeySaving] = useState(false);
+  const [secKeyMsg, setSecKeyMsg] = useState<{ type: "success" | "error"; text: string } | null>(null);
+  const [showSecureKey, setShowSecureKey] = useState(false);
+
   // States
-  const [showKey, setShowKey] = useState(false);
   const [showBundleKey, setShowBundleKey] = useState(false);
   const [testResult, setTestResult] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
@@ -55,7 +63,61 @@ export default function SettingsView({
       })
       .then((data) => setStatusData(data))
       .catch(() => {});
+
+    // Check if key is configured backend-side on initial load
+    fetch("/api/nabda/key")
+      .then((res) => res.json())
+      .then((data) => {
+        setIsKeyConfigured(!!data.configured);
+      })
+      .catch(() => {});
   }, []);
+
+  const handleSaveSecureKey = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!secureKey.trim()) {
+      setSecKeyMsg({
+        type: "error",
+        text: lang === "ar" ? "الرجاء إدخال مفتاح API صحيح لتخزينه على الخادم." : "Please enter a valid API key to store on the server."
+      });
+      return;
+    }
+
+    setIsSecKeySaving(true);
+    setSecKeyMsg(null);
+
+    try {
+      const response = await fetch("/api/nabda/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: secureKey.trim() })
+      });
+
+      const data = await response.json();
+      if (response.ok && data.success) {
+        setIsKeyConfigured(true);
+        setSecureKey(""); // Clear local input state completely to not expose in browser memory
+        setSecKeyMsg({
+          type: "success",
+          text: lang === "ar" ? "✅ تم حفظ وتمرير وتأمين المفتاح بنجاح على الخادم!" : "✅ API key saved and secured on the master server successfully!"
+        });
+        
+        // Update live stats indicator
+        setStatusData(prev => prev ? { ...prev, secured: true } : { secured: true, maskedKey: "sk_...", geminiSecured: false, geminiMaskedKey: "" });
+      } else {
+        throw new Error(data.error || "Failed to update key.");
+      }
+    } catch (err: any) {
+      setSecKeyMsg({
+        type: "error",
+        text: lang === "ar" 
+          ? `❌ فشل الارتباط: ${err.message}` 
+          : `❌ Failed to save key: ${err.message}`
+      });
+    } finally {
+      setIsSecKeySaving(false);
+    }
+  };
 
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
@@ -63,7 +125,7 @@ export default function SettingsView({
     
     setTimeout(() => {
       onSaveSettings({
-        apiKey,
+        apiKey: "", // Securely unset in local storage to prevent leakage
         sendEndpoint,
         webhookUrl,
         bundleApiKey,
@@ -144,25 +206,77 @@ export default function SettingsView({
 
             <div className="space-y-4">
               
-              {/* Primary API Key */}
-              <div className="space-y-1.5">
-                <div className="flex justify-between items-center">
-                  <label className="text-xs text-slate-400 font-medium">{txt.lblKey}</label>
+              {/* Primary API Key (Secure Backend Component) */}
+              <div className="space-y-2 bg-[#0C0E12] border border-slate-800 p-4 rounded-xl">
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-2">
+                  <div className="space-y-0.5">
+                    <label className="text-xs font-bold text-slate-300 flex items-center gap-1.5">
+                      <Key size={13} className="text-amber-500" />
+                      {lang === "ar" ? "مفتاح Nabda API المؤمن على الخادم" : "Server-Secured Nabda API Key"}
+                    </label>
+                    <span className="text-[10px] text-slate-400 block leading-tight">
+                      {lang === "ar" 
+                        ? "يتم حفظ هذا المفتاح وقراءته مباشرة من الخادم دون مشاركته مع ذاكرة المتصفح." 
+                        : "Key is saved and accessed directly on the backend. Never exposed to browser state/local storage."}
+                    </span>
+                  </div>
+                  
+                  <div>
+                    {isKeyConfigured ? (
+                      <span className="text-[9px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-sans">
+                        <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                        {lang === "ar" ? "مفعل ومحمي" : "CONFIGURED & SECURED"}
+                      </span>
+                    ) : (
+                      <span className="text-[9px] font-bold bg-red-500/10 text-red-500 border border-red-500/20 px-2 py-0.5 rounded-full font-sans">
+                        {lang === "ar" ? "غير مهيأ" : "NOT CONFIGURED YET"}
+                      </span>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex flex-col sm:flex-row gap-2 mt-2 pt-2 border-t border-slate-800/60">
+                  <div className="relative flex-1">
+                    <input
+                      type={showSecureKey ? "text" : "password"}
+                      value={secureKey}
+                      onChange={(e) => setSecureKey(e.target.value)}
+                      placeholder={
+                        isKeyConfigured 
+                          ? (lang === "ar" ? "•••••••••••••••• (مفتاح نشط - أدخل مفتاحاً جديداً لتحديثه)" : "•••••••••••••••• (Active - enter new key to overwrite)") 
+                          : (lang === "ar" ? "أدخل مفتاح Nabda API (sk_...)" : "Enter Nabda API Key (sk_...)")
+                      }
+                      className="w-full bg-[#050608] border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 transition font-mono pr-14"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setShowSecureKey(!showSecureKey)}
+                      className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition cursor-pointer text-[10px] font-mono select-none"
+                    >
+                      {showSecureKey ? "HIDE" : "SHOW"}
+                    </button>
+                  </div>
+                  
                   <button
                     type="button"
-                    onClick={() => setShowKey(!showKey)}
-                    className="text-[10px] text-amber-500 hover:text-white transition"
+                    onClick={handleSaveSecureKey}
+                    disabled={isSecKeySaving}
+                    className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-bold text-xs py-2.5 px-4 rounded-xl transition flex items-center justify-center gap-1.5 shadow-md hover:shadow-indigo-600/10 cursor-pointer min-w-[110px]"
                   >
-                    {showKey ? "Hide Hidden Key" : "Reveal RAW Token"}
+                    <span>{isSecKeySaving ? (lang === "ar" ? "جاري الحفظ..." : "Saving...") : (lang === "ar" ? "حفظ على الخادم" : "Save to Server")}</span>
                   </button>
                 </div>
-                <input
-                  id="settings_api_key_input"
-                  type={showKey ? "text" : "password"}
-                  value={apiKey}
-                  onChange={(e) => setApiKey(e.target.value)}
-                  className="w-full bg-slate-950 border border-slate-800 rounded-xl px-3.5 py-2.5 text-xs text-white focus:outline-none focus:border-amber-500 transition font-mono"
-                />
+
+                {secKeyMsg && (
+                  <div className={`mt-2 p-2.5 rounded-lg text-[11px] font-mono flex items-start gap-1.5 ${
+                    secKeyMsg.type === "success" 
+                      ? "bg-green-500/5 text-green-400 border border-green-500/10" 
+                      : "bg-red-500/5 text-red-400 border border-red-500/10"
+                  }`}>
+                    {secKeyMsg.type === "error" && <AlertCircle size={14} className="shrink-0 mt-0.5" />}
+                    <span>{secKeyMsg.text}</span>
+                  </div>
+                )}
               </div>
 
               {/* Broadcast Endpoints */}

@@ -19,7 +19,10 @@ import {
   Check,
   Sliders,
   FileText,
-  AlertTriangle
+  AlertTriangle,
+  Key,
+  Eye,
+  EyeOff
 } from "lucide-react";
 import { INITIAL_CONTACTS } from "../mockData";
 import { Contact } from "../types";
@@ -166,6 +169,13 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   const [csvFileName, setCsvFileName] = useState("");
 
   // Connection & Sending States
+  const [nabdaApiKey, setNabdaApiKey] = useState(() => {
+    return localStorage.getItem("fairouzz_nabda_api_key") || "";
+  });
+  const [tempApiKey, setTempApiKey] = useState(() => {
+    return localStorage.getItem("fairouzz_nabda_api_key") || "";
+  });
+  const [showApiKey, setShowApiKey] = useState(false);
   const [nabdaStatus, setNabdaStatus] = useState<"idle" | "testing" | "connected" | "error">("idle");
   const [nabdaErrorDetails, setNabdaErrorDetails] = useState("");
   const [isSendingActive, setIsSendingActive] = useState(false);
@@ -228,11 +238,16 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   }, [activeTab]);
 
   // Test connection function
-  const testNabdaConnection = async () => {
+  const testNabdaConnection = async (targetKey?: string) => {
     setNabdaStatus("testing");
     setNabdaErrorDetails("");
+    const keyToUse = targetKey !== undefined ? targetKey : nabdaApiKey;
     try {
-      const response = await fetch("/api/nabda/test");
+      const headers: Record<string, string> = {};
+      if (keyToUse) {
+        headers["x-nabda-api-key"] = keyToUse;
+      }
+      const response = await fetch("/api/nabda/test", { headers });
       const data = await response.json();
       if (response.ok && data.success) {
         setNabdaStatus("connected");
@@ -246,7 +261,34 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     }
   };
 
+  const handleSaveApiKey = async (newKey: string) => {
+    const trimmed = newKey.trim();
+    localStorage.setItem("fairouzz_nabda_api_key", trimmed);
+    setNabdaApiKey(trimmed);
+    try {
+      const response = await fetch("/api/nabda/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: trimmed })
+      });
+      if (response.ok) {
+        appendConsoleLog("🔑 Nabda API Key synchronized with the server registry.");
+      }
+    } catch (e: any) {
+      console.error("Failed syncing key with backend:", e);
+    }
+    testNabdaConnection(trimmed);
+  };
+
   useEffect(() => {
+    // If we have a key in state, let's sync it to server on startup just in case
+    if (nabdaApiKey) {
+      fetch("/api/nabda/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: nabdaApiKey })
+      }).catch(err => console.warn("Startup key sync error:", err));
+    }
     testNabdaConnection();
   }, []);
 
@@ -748,9 +790,13 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       }
     } else {
       try {
+        const headers: Record<string, string> = { "Content-Type": "application/json" };
+        if (nabdaApiKey) {
+          headers["x-nabda-api-key"] = nabdaApiKey.trim();
+        }
         const response = await fetch("/api/send", {
           method: "POST",
-          headers: { "Content-Type": "application/json" },
+          headers,
           body: JSON.stringify({
             phone: item.normalizedPhone,
             message: customMsg,
@@ -936,6 +982,86 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
             <span>{lang === "ar" ? "تفريغ الطابور" : "Purge Queue"}</span>
           </button>
         </div>
+      </div>
+
+      {/* NABDA API Integration Settings Box */}
+      <div className="bg-[#14171D] border border-[#2D3139] rounded-2xl shadow-xl p-5 md:p-6 space-y-4">
+        <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
+          <div className="space-y-1">
+            <div className="flex items-center gap-2">
+              <Key size={16} className="text-indigo-400" />
+              <h2 className="text-sm font-bold text-white uppercase tracking-wider">
+                {lang === "ar" ? "بوابة الإرسال والربط مع النبضة" : "Nabda Gateway API Integration"}
+              </h2>
+            </div>
+            <p className="text-xs text-slate-400">
+              {lang === "ar" 
+                ? "أدخل مفتاح الـ API الخاص بـ Nabda لتفعيل ميزة البث والإرسال المباشر للرسائل عبر بوابتهم الرقمية." 
+                : "Configure your Nabda platform development API key here to route actual SMS/WhatsApp dispatches seamlessly."}
+            </p>
+          </div>
+          
+          <div className="flex items-center gap-2 text-xs">
+            <span className="text-slate-400 font-medium font-mono text-[11px]">
+              {lang === "ar" ? "حالة ربط البوابة:" : "Gateway link status:"}
+            </span>
+            {nabdaStatus === "testing" && (
+              <span className="text-slate-400 font-mono animate-pulse text-[11px] bg-slate-800 px-2.5 py-1 rounded">Testing line...</span>
+            )}
+            {nabdaStatus === "connected" && (
+              <span className="flex items-center gap-1.5 text-emerald-400 font-bold bg-[#1B2C24] px-2.5 py-1 rounded-full border border-emerald-500/25 text-[11px]">
+                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse"></span>
+                {lang === "ar" ? "متصل ببوابة النبضة" : "Connected Secured"}
+              </span>
+            )}
+            {nabdaStatus === "error" && (
+              <span className="flex items-center gap-1.5 text-red-400 font-bold bg-[#341B21] px-2.5 py-1 rounded-full border border-red-500/25 text-[11px]" title={nabdaErrorDetails}>
+                ⚠️ {lang === "ar" ? "خطأ اتصال" : "Port Error"}
+              </span>
+            )}
+            {nabdaStatus === "idle" && (
+              <span className="text-slate-400 font-bold bg-slate-800 px-2.5 py-1 rounded-full border border-slate-700 text-[11px]">
+                {lang === "ar" ? "بانتظار التهيئة" : "Unconfigured"}
+              </span>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-col sm:flex-row gap-3">
+          <div className="relative flex-1">
+            <input
+              type={showApiKey ? "text" : "password"}
+              value={tempApiKey}
+              onChange={(e) => setTempApiKey(e.target.value)}
+              placeholder={lang === "ar" ? "أدخل مفتاح الـ API للنبضة (sk_...)" : "Enter Nabda API credential key (sk_...)"}
+              className="w-full bg-[#0A0B0E] border border-[#2D3139] rounded-xl px-4 py-3.5 text-xs text-white placeholder-slate-500 focus:outline-none focus:border-indigo-500 font-mono transition"
+            />
+            <button
+              type="button"
+              onClick={() => setShowApiKey(!showApiKey)}
+              className="absolute right-4 top-1/2 -translate-y-1/2 text-slate-400 hover:text-white transition cursor-pointer"
+            >
+              {showApiKey ? <EyeOff size={14} /> : <Eye size={14} />}
+            </button>
+          </div>
+          
+          <button
+            onClick={() => handleSaveApiKey(tempApiKey)}
+            className="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-5 py-3.5 rounded-xl transition shadow-md shadow-indigo-600/15 flex items-center justify-center gap-2 whitespace-nowrap cursor-pointer"
+          >
+            <Check size={14} />
+            <span>{lang === "ar" ? "حفظ واعتماد المفتاح" : "Save & Verify Connection"}</span>
+          </button>
+        </div>
+        
+        {nabdaStatus === "error" && nabdaErrorDetails && (
+          <div className="bg-red-500/5 border border-red-500/10 rounded-xl p-3 text-[11px] text-red-400 flex items-start gap-2 animate-fadeIn font-mono">
+            <AlertCircle size={14} className="shrink-0 mt-0.5" />
+            <p className="leading-relaxed">
+              <strong>{lang === "ar" ? "تفاصيل التنبيه:" : "Gateway message:"}</strong> {nabdaErrorDetails}
+            </p>
+          </div>
+        )}
       </div>
 
       {/* 3-Tab Navigator Panel */}

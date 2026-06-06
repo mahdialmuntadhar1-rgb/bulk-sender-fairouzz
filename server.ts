@@ -137,11 +137,11 @@ async function startServer() {
 
   // Verify connection to Nabda server proxy
   app.get("/api/nabda/test", (req, res) => {
-    const apiKey = process.env.NABDA_API_KEY || "";
+    const apiKey = (req.headers["x-nabda-api-key"] as string) || process.env.NABDA_API_KEY || "";
     if (!apiKey) {
       return res.status(400).json({ 
         success: false, 
-        error: "NABDA_API_KEY is not configured in the server environment variables." 
+        error: "NABDA_API_KEY is not configured in the server environment variables. Please provide one in the setup box." 
       });
     }
 
@@ -165,7 +165,7 @@ async function startServer() {
           statusCode: clientRes.statusCode,
           secured: true,
           message: clientRes.statusCode === 401 || clientRes.statusCode === 403 
-            ? "Connected to Nabda, but credentials / API key rejected." 
+            ? "Connected to Nabda backend, but API key is invalid/unauthorized." 
             : `Successfully pinged Nabda API (HTTP ${clientRes.statusCode})`
         });
       });
@@ -188,6 +188,37 @@ async function startServer() {
 
     clientReq.setTimeout(5000);
     clientReq.end();
+  });
+
+  // Dynamic set API key endpoint
+  app.post("/api/nabda/key", (req, res) => {
+    const { key } = req.body;
+    if (typeof key === "string") {
+      const normalizedKey = key.trim();
+      process.env.NABDA_API_KEY = normalizedKey;
+      
+      try {
+        const envPath = path.join(process.cwd(), ".env");
+        let envContent = "";
+        if (fs.existsSync(envPath)) {
+          envContent = fs.readFileSync(envPath, "utf8");
+        }
+        if (envContent.includes("NABDA_API_KEY=")) {
+          envContent = envContent.replace(/NABDA_API_KEY\s*=\s*.*/g, `NABDA_API_KEY="${normalizedKey}"`);
+        } else {
+          envContent += `\nNABDA_API_KEY="${normalizedKey}"\n`;
+        }
+        fs.writeFileSync(envPath, envContent, "utf8");
+      } catch (err: any) {
+        console.error("Failed to write to .env:", err.message);
+      }
+      
+      return res.json({ 
+        success: true, 
+        maskedKey: normalizedKey ? `${normalizedKey.slice(0, 4)}***${normalizedKey.slice(-4)}` : "NOT_CONFIGURED" 
+      });
+    }
+    return res.status(400).json({ error: "Invalid key format" });
   });
 
   // Gemini AI message optimization endpoint
@@ -228,11 +259,11 @@ async function startServer() {
   // Main message proxy sender
   app.post("/api/send", (req, res) => {
     const { phone, message, businessName, campaignName } = req.body;
-    const apiKey = process.env.NABDA_API_KEY;
+    const apiKey = (req.headers["x-nabda-api-key"] as string) || process.env.NABDA_API_KEY;
 
     if (!apiKey) {
       return res.status(500).json({
-        error: "NABDA_API_KEY is not configured on the master server. Please assign it in .env or Settings.",
+        error: "NABDA_API_KEY is not configured on the master server. Please enter your API key in the Setup Box.",
       });
     }
 

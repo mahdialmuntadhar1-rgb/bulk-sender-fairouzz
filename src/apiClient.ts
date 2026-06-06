@@ -3,10 +3,10 @@
   "https://bulk-sender-fairouzz-api.mahdialmuntadhar1.workers.dev";
 
 export async function apiGet(path: string) {
-  const response = await fetch(${API_BASE_URL});
+  const response = await fetch(`${API_BASE_URL}${path}`);
 
   if (!response.ok) {
-    throw new Error(API error : );
+    throw new Error(`API error ${response.status}: ${path}`);
   }
 
   return response.json();

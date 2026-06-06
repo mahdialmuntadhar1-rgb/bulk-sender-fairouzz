@@ -74,27 +74,51 @@ export default function App() {
 
   // Save to LocalStorage whenever structures modify
   useEffect(() => {
-    localStorage.setItem("shakumaku_contacts", JSON.stringify(contacts));
+    try {
+      localStorage.setItem("shakumaku_contacts", JSON.stringify(contacts));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for shakumaku_contacts", e);
+    }
   }, [contacts]);
 
   useEffect(() => {
-    localStorage.setItem("shakumaku_campaigns", JSON.stringify(campaigns));
+    try {
+      localStorage.setItem("shakumaku_campaigns", JSON.stringify(campaigns));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for shakumaku_campaigns", e);
+    }
   }, [campaigns]);
 
   useEffect(() => {
-    localStorage.setItem("shakumaku_templates", JSON.stringify(templates));
+    try {
+      localStorage.setItem("shakumaku_templates", JSON.stringify(templates));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for shakumaku_templates", e);
+    }
   }, [templates]);
 
   useEffect(() => {
-    localStorage.setItem("shakumaku_inbox", JSON.stringify(inbox));
+    try {
+      localStorage.setItem("shakumaku_inbox", JSON.stringify(inbox));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for shakumaku_inbox", e);
+    }
   }, [inbox]);
 
   useEffect(() => {
-    localStorage.setItem("shakumaku_events", JSON.stringify(events));
+    try {
+      localStorage.setItem("shakumaku_events", JSON.stringify(events));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for shakumaku_events", e);
+    }
   }, [events]);
 
   useEffect(() => {
-    localStorage.setItem("shakumaku_settings", JSON.stringify(settings));
+    try {
+      localStorage.setItem("shakumaku_settings", JSON.stringify(settings));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for shakumaku_settings", e);
+    }
   }, [settings]);
 
   // Read Inbox count to flash alerts

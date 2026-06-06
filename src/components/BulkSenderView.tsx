@@ -194,16 +194,32 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
 
   // Sync Persistence to storage
   useEffect(() => {
-    localStorage.setItem("fairouzz_bulk_queue", JSON.stringify(queue));
+    try {
+      localStorage.setItem("fairouzz_bulk_queue", JSON.stringify(queue));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for fairouzz_bulk_queue", e);
+    }
   }, [queue]);
   useEffect(() => {
-    localStorage.setItem("fairouzz_bulk_invalid", JSON.stringify(invalidList));
+    try {
+      localStorage.setItem("fairouzz_bulk_invalid", JSON.stringify(invalidList));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for fairouzz_bulk_invalid", e);
+    }
   }, [invalidList]);
   useEffect(() => {
-    localStorage.setItem("fairouzz_bulk_duplicates", JSON.stringify(duplicateList));
+    try {
+      localStorage.setItem("fairouzz_bulk_duplicates", JSON.stringify(duplicateList));
+    } catch (e) {
+      console.warn("localStorage quota exceeded for fairouzz_bulk_duplicates", e);
+    }
   }, [duplicateList]);
   useEffect(() => {
-    localStorage.setItem("fairouzz_bulk_msg", messageText);
+    try {
+      localStorage.setItem("fairouzz_bulk_msg", messageText);
+    } catch (e) {
+      console.warn("localStorage quota exceeded for fairouzz_bulk_msg", e);
+    }
   }, [messageText]);
 
   // Reset validation summary on tab change to prevent contamination

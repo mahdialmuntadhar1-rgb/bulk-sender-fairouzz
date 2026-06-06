@@ -281,15 +281,33 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   };
 
   useEffect(() => {
-    // If we have a key in state, let's sync it to server on startup just in case
-    if (nabdaApiKey) {
-      fetch("/api/nabda/key", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ key: nabdaApiKey })
-      }).catch(err => console.warn("Startup key sync error:", err));
-    }
-    testNabdaConnection();
+    const initApiKeyCheck = async () => {
+      try {
+        const response = await fetch("/api/nabda/key");
+        const data = await response.json();
+        if (response.ok && data.configured) {
+          // Key exists on backend, verify connection line
+          testNabdaConnection();
+        } else if (nabdaApiKey) {
+          // Backend has no key set, sync our local storage key
+          const syncResponse = await fetch("/api/nabda/key", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ key: nabdaApiKey })
+          });
+          if (syncResponse.ok) {
+            appendConsoleLog("🔑 Nabda API Key synchronized with the server registry on startup.");
+            testNabdaConnection(nabdaApiKey);
+          }
+        } else {
+          setNabdaStatus("idle");
+        }
+      } catch (err) {
+        console.warn("Error verifying API key configuration on startup:", err);
+        testNabdaConnection();
+      }
+    };
+    initApiKeyCheck();
   }, []);
 
   const appendConsoleLog = (line: string) => {
@@ -794,7 +812,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
         if (nabdaApiKey) {
           headers["x-nabda-api-key"] = nabdaApiKey.trim();
         }
-        const response = await fetch("/api/send", {
+        const response = await fetch("/api/nabda/send", {
           method: "POST",
           headers,
           body: JSON.stringify({

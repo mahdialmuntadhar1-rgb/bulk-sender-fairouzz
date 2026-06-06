@@ -190,6 +190,12 @@ async function startServer() {
     clientReq.end();
   });
 
+  // Check if Nabda API key is configured without exposing it
+  app.get("/api/nabda/key", (req, res) => {
+    const hasKey = !!process.env.NABDA_API_KEY;
+    res.json({ configured: hasKey });
+  });
+
   // Dynamic set API key endpoint
   app.post("/api/nabda/key", (req, res) => {
     const { key } = req.body;
@@ -215,7 +221,7 @@ async function startServer() {
       
       return res.json({ 
         success: true, 
-        maskedKey: normalizedKey ? `${normalizedKey.slice(0, 4)}***${normalizedKey.slice(-4)}` : "NOT_CONFIGURED" 
+        configured: !!normalizedKey
       });
     }
     return res.status(400).json({ error: "Invalid key format" });
@@ -257,7 +263,7 @@ async function startServer() {
   });
 
   // Main message proxy sender
-  app.post("/api/send", (req, res) => {
+  const handleSendMessage = (req: any, res: any) => {
     const { phone, message, businessName, campaignName } = req.body;
     const apiKey = (req.headers["x-nabda-api-key"] as string) || process.env.NABDA_API_KEY;
 
@@ -365,7 +371,10 @@ async function startServer() {
 
     reqOut.write(postData);
     reqOut.end();
-  });
+  };
+
+  app.post("/api/send", handleSendMessage);
+  app.post("/api/nabda/send", handleSendMessage);
 
   // Log Fetchers
   app.get("/api/logs/:type", (req, res) => {

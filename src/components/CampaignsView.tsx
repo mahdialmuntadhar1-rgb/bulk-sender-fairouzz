@@ -263,7 +263,7 @@ export default function CampaignsView({
       .replace(/{category}/g, target.category || (lang === "ar" ? "متجر" : "Market"));
 
     try {
-      const response = await fetch("/api/send", {
+      const response = await fetch("/api/nabda/send", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

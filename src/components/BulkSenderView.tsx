@@ -246,14 +246,16 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       const headers: Record<string, string> = {};
       if (keyToUse) {
         headers["x-nabda-api-key"] = keyToUse;
+        headers["Authorization"] = keyToUse;
       }
-      const response = await fetch("/api/nabda/test", { headers });
+      // Call primary specified Cloudflare workers endpoint as instructed
+      const response = await fetch("https://bulk-sender-fairouzz-api.mahdialmuntadhar1.workers.dev/api/nabda/key", { headers });
       const data = await response.json();
-      if (response.ok && data.success) {
+      if (response.ok && (data.configured || data.success)) {
         setNabdaStatus("connected");
       } else {
         setNabdaStatus("error");
-        setNabdaErrorDetails(data.error || "Connection rejected by server proxy.");
+        setNabdaErrorDetails(data.error || "Connection rejected by specified worker backend.");
       }
     } catch (err: any) {
       setNabdaStatus("error");
@@ -266,16 +268,25 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     localStorage.setItem("fairouzz_nabda_api_key", trimmed);
     setNabdaApiKey(trimmed);
     try {
-      const response = await fetch("/api/nabda/key", {
+      // POST to primary worker registry
+      const response = await fetch("https://bulk-sender-fairouzz-api.mahdialmuntadhar1.workers.dev/api/nabda/key", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ key: trimmed, apiKey: trimmed })
+      });
+      
+      // Also backup to local proxy settings
+      await fetch("/api/nabda/key", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ key: trimmed })
       });
+
       if (response.ok) {
-        appendConsoleLog("🔑 Nabda API Key synchronized with the server registry.");
+        appendConsoleLog("🔑 Nabda API Key synchronized and secured with specified Worker registry.");
       }
     } catch (e: any) {
-      console.error("Failed syncing key with backend:", e);
+      console.error("Failed syncing key with worker registry:", e);
     }
     testNabdaConnection(trimmed);
   };
@@ -283,14 +294,12 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
   useEffect(() => {
     const initApiKeyCheck = async () => {
       try {
-        const response = await fetch("/api/nabda/key");
+        const response = await fetch("https://bulk-sender-fairouzz-api.mahdialmuntadhar1.workers.dev/api/nabda/key");
         const data = await response.json();
-        if (response.ok && data.configured) {
-          // Key exists on backend, verify connection line
+        if (response.ok && (data.configured || data.success)) {
           testNabdaConnection();
         } else if (nabdaApiKey) {
-          // Backend has no key set, sync our local storage key
-          const syncResponse = await fetch("/api/nabda/key", {
+          const syncResponse = await fetch("https://bulk-sender-fairouzz-api.mahdialmuntadhar1.workers.dev/api/nabda/key", {
             method: "POST",
             headers: { "Content-Type": "application/json" },
             body: JSON.stringify({ key: nabdaApiKey })
@@ -811,14 +820,14 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
         const headers: Record<string, string> = { "Content-Type": "application/json" };
         if (nabdaApiKey) {
           headers["x-nabda-api-key"] = nabdaApiKey.trim();
+          headers["Authorization"] = nabdaApiKey.trim();
         }
-        const response = await fetch("/api/nabda/send", {
+        const response = await fetch("https://bulk-sender-fairouzz-api.mahdialmuntadhar1.workers.dev/api/nabda/send", {
           method: "POST",
           headers,
           body: JSON.stringify({
             phone: item.normalizedPhone,
-            message: customMsg,
-            businessName: item.businessName
+            message: customMsg
           })
         });
 
@@ -931,11 +940,213 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     ? Math.round(((countSent + countFailed) / totalInQueue) * 100)
     : 0;
 
+  // Render the interactive validation feedback card inside each tab
+  const renderValidationSummary = (currentTab: "gov" | "manual" | "csv") => {
+    if (!validationSummary || validationSummary.tab !== currentTab) return null;
+    return (
+      <div className="border border-slate-800 bg-[#0C0E12] rounded-xl p-4 md:p-5 space-y-4 shadow-xl select-none animate-fadeIn">
+        <div className="flex justify-between items-center border-b border-slate-850 pb-3">
+          <div className="space-y-0.5">
+            <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider block w-fit">
+              {lang === "ar" ? "تم فحص قاعدة البيانات" : "Verification Passed"}
+            </span>
+            <h3 className="text-xs font-black text-white">
+              {lang === "ar" ? "📑 تقرير جودة وفحص أرقام الهواتف" : "📑 Campaign Audit Summary"}
+            </h3>
+          </div>
+          {validationSummary.isCrmFallback && (
+            <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2 py-0.5 rounded-full font-bold">
+              {lang === "ar" ? "💡 مسترجع تلقائياً من الـ CRM" : "💡 CRM Central Auto-loaded"}
+            </span>
+          )}
+        </div>
+
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className="bg-[#121419]/60 border border-slate-800 p-3 rounded-xl text-center">
+            <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{lang === "ar" ? "إجمالي السجلات" : "Total Scanned"}</p>
+            <p className="text-base font-mono font-black text-white mt-1">{validationSummary.total}</p>
+          </div>
+          <div className="bg-emerald-500/5 border border-emerald-500/10 p-3 rounded-xl text-center">
+            <p className="text-[10px] text-emerald-400 uppercase font-bold tracking-wider">{lang === "ar" ? "صالحة للإرسال" : "Valid (Ready)"}</p>
+            <p className="text-base font-mono font-black text-emerald-400 mt-1">{validationSummary.valid}</p>
+          </div>
+          <div className="bg-red-500/5 border border-red-500/10 p-3 rounded-xl text-center">
+            <p className="text-[10px] text-red-400 uppercase font-bold tracking-wider">{lang === "ar" ? "أرقام خاطئة" : "Rejected Invalids"}</p>
+            <p className="text-base font-mono font-black text-red-400 mt-1">{validationSummary.invalid}</p>
+          </div>
+          <div className="bg-indigo-500/5 border border-indigo-500/10 p-3 rounded-xl text-center">
+            <p className="text-[10px] text-indigo-400 uppercase font-bold tracking-wider">{lang === "ar" ? "أرقام مكررة" : "Duplicates"}</p>
+            <p className="text-base font-mono font-black text-indigo-400 mt-1">{validationSummary.duplicates}</p>
+          </div>
+        </div>
+
+        {validationSummary.peek.length > 0 && (
+          <div className="bg-black/35 p-3 rounded-xl border border-slate-850 space-y-1.5 text-[10px]">
+            <p className="font-extrabold text-indigo-400 uppercase tracking-widest text-[9px] border-b border-slate-850 pb-1.5 flex items-center justify-between">
+              <span>{lang === "ar" ? "📋 معاينة أول 10 مستلمين في قائمة التحقق:" : "📋 Recipient Queue Peek (Top 10):"}</span>
+              <span className="text-slate-450 font-mono text-[8px]">In Queue Index</span>
+            </p>
+            <div className="max-h-[110px] overflow-y-auto space-y-1 font-mono text-slate-350">
+              {validationSummary.peek.slice(0, 10).map((r, i) => (
+                <div key={i} className="flex justify-between border-b border-slate-900 pb-0.5">
+                  <span>{i + 1}. {r.name || "Default Contact"} ➔ {r.phone}</span>
+                  <span className="text-slate-500 font-sans text-[9px] truncate">
+                    {lang === "ar" ? GOV_AR[r.gov] || r.gov : r.gov} | {r.cat}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+      </div>
+    );
+  };
+
+  // Render the real-time transmission, control buttons and ledger log inside each tab
+  const renderTransmissionControlsAndLogs = (currentTab: "gov" | "manual" | "csv") => {
+    const tabQueue = queue.filter(item => item.source === currentTab);
+    const tabCountRemaining = tabQueue.filter(q => q.status === "ready").length;
+    const tabCountSent = tabQueue.filter(q => q.status === "sent").length;
+    const tabCountFailed = tabQueue.filter(q => q.status === "failed").length;
+    const tabTotalInQueue = tabQueue.length;
+    const tabProgressPercentage = tabTotalInQueue > 0
+      ? Math.round(((tabCountSent + tabCountFailed) / tabTotalInQueue) * 100)
+      : 0;
+
+    return (
+      <div className="border border-slate-800 bg-[#0C0E12] rounded-2xl p-5 md:p-6 space-y-5 shadow-xl select-none animate-fadeIn">
+        <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-4">
+          <div className="space-y-1">
+            <h3 className="text-xs font-extrabold text-indigo-400 uppercase tracking-widest flex items-center gap-1.5 leading-none font-sans">
+              <Play size={11} fill="currentColor" />
+              {lang === "ar" ? "لوحة التحكم بالبث المباشر والأرقام" : "Broadcast Controller & Channels Pipeline"}
+            </h3>
+            <p className="text-[10px] text-slate-400">
+              {lang === "ar" ? "تحكم في العملية واضبط موقت المراسلة بدقة عسكرية." : "Configure transmission throttling and dispatch broadcast live."}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-3 text-xs font-mono">
+            <div className="flex items-center gap-2">
+              <span className="text-slate-400">{lang === "ar" ? "معدل التأخير (بالثانية):" : "Delay (Seconds):"}</span>
+              <input
+                type="number"
+                min={1}
+                max={120}
+                value={delaySeconds}
+                onChange={(e) => {
+                  const val = Math.max(1, parseInt(e.target.value) || 1);
+                  setDelaySeconds(val);
+                  if (sendingRef.current) {
+                    sendingRef.current.delaySeconds = val;
+                  }
+                }}
+                disabled={isSendingActive}
+                className="w-16 bg-[#0A0B0E] border border-slate-800 rounded px-2.5 py-1 text-center text-white text-xs font-bold font-mono outline-none focus:border-indigo-500 disabled:opacity-50"
+              />
+            </div>
+          </div>
+        </div>
+
+        {/* Counter cards */}
+        <div className="grid grid-cols-3 gap-3 text-sans">
+          <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3 text-center">
+            <span className="text-[9px] text-indigo-400 font-black block mb-0.5 uppercase tracking-wider">Ready to Send</span>
+            <span className="text-base font-black font-mono text-white">{tabCountRemaining}</span>
+          </div>
+          <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3 text-center">
+            <span className="text-[9px] text-emerald-400 font-black block mb-0.5 uppercase tracking-wider">Success Sent</span>
+            <span className="text-base font-black font-mono text-white">{tabCountSent}</span>
+          </div>
+          <div className="bg-[#0A0B0E] border border-slate-800 rounded-xl p-3 text-center">
+            <span className="text-[9px] text-red-400 font-black block mb-0.5 uppercase tracking-wider">Failed Lines</span>
+            <span className="text-base font-black font-mono text-white">{tabCountFailed}</span>
+          </div>
+        </div>
+
+        {/* Action button controls */}
+        <div className="flex flex-wrap items-center gap-2.5 select-none font-sans">
+          {!isSendingActive ? (
+            <button
+              onClick={startSendingProcess}
+              className="px-5 py-3 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-md shadow-emerald-650/10 transition cursor-pointer"
+            >
+              <Play size={13} fill="currentColor" />
+              <span>{lang === "ar" ? "بدء البث والمراسلة الفورية" : "Start Broadcast"}</span>
+            </button>
+          ) : (
+            <>
+              {sendingPaused ? (
+                <button
+                  onClick={handleResume}
+                  className="px-5 py-3 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-lg shadow-indigo-600/10 transition cursor-pointer animate-pulse"
+                >
+                  <Play size={13} fill="currentColor" />
+                  <span>{lang === "ar" ? "استئناف الإرسال" : "Resume Campaign"}</span>
+                </button>
+              ) : (
+                <button
+                  onClick={handlePause}
+                  className="px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 text-white font-extrabold text-xs flex items-center gap-2 shadow-md shadow-amber-600/10 transition cursor-pointer"
+                >
+                  <Pause size={13} fill="currentColor" />
+                  <span>{lang === "ar" ? "إيقاف مؤقت للعملية" : "Pause Transmission"}</span>
+                </button>
+              )}
+
+              <button
+                onClick={handleStop}
+                className="px-5 py-3 rounded-xl bg-red-600 hover:bg-red-500 text-white font-extrabold text-xs flex items-center gap-1.5 shadow-md shadow-red-650/10 transition cursor-pointer"
+              >
+                <StopCircle size={13} />
+                <span>{lang === "ar" ? "إنهاء وإلغاء الحملة" : "Stop Campaign"}</span>
+              </button>
+            </>
+          )}
+        </div>
+
+        {/* Real-time progression speed tracker */}
+        {isSendingActive && tabTotalInQueue > 0 && (
+          <div className="space-y-1.5 font-mono">
+            <div className="flex justify-between items-center text-[10px] text-slate-400 font-bold uppercase tracking-wider">
+              <span>Broadcasting Speed Progression:</span>
+              <span className="text-indigo-400 font-black">{tabProgressPercentage}% Complete</span>
+            </div>
+            <div className="bg-[#12141a] h-2 rounded-full overflow-hidden border border-slate-800">
+              <div
+                className="bg-indigo-500 h-full transition-all duration-300"
+                style={{ width: `${tabProgressPercentage}%` }}
+              />
+            </div>
+          </div>
+        )}
+
+        {/* Live Ledger logs */}
+        <div className="space-y-1.5">
+          <label className="text-[10px] text-slate-400 font-black uppercase tracking-widest font-mono block">
+            📟 Live Campaign Log:
+          </label>
+          <div className="bg-black/55 border border-slate-800 rounded-xl p-3.5 h-[120px] overflow-y-auto font-mono text-[9px] space-y-1 text-left select-all">
+            {sendLogs.length === 0 ? (
+              <p className="text-slate-600 italic">No activity yet. Click 'Start Broadcast' to stream active send statuses...</p>
+            ) : (
+              sendLogs.map((log, lIdx) => (
+                <p key={lIdx} className={log.includes("🟢") ? "text-emerald-400" : log.includes("🔴") ? "text-red-400 font-bold" : "text-slate-400"}>
+                  {log}
+                </p>
+              ))
+            )}
+          </div>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className={`space-y-6 ${lang === "ar" ? "rtl text-right font-sans" : "ltr text-left font-sans"}`}>
       
       {/* Title Header with status display */}
-      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-800 pb-5">
+      <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4 border-b border-slate-850 pb-5">
         <div>
           <div className="flex items-center gap-2">
             <span className="w-2.5 h-2.5 rounded-full bg-indigo-500 animate-pulse"></span>
@@ -949,42 +1160,51 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
               : "Advanced military-grade broadcasting pipeline supporting localized governorate targeting, arbitrary copy-paste strings, or entire raw spreadsheets."}
           </p>
         </div>
+      </div>
 
-        <div className="flex items-center gap-2">
-          {/* Nabda Channel Integrations Banner */}
-          <div className="flex items-center gap-1.5 text-xs">
-            {nabdaStatus === "testing" && (
-              <span className="text-slate-400 font-mono animate-pulse text-[11px] bg-slate-800 px-2 py-1 rounded">Testing line...</span>
-            )}
-            {nabdaStatus === "connected" && (
-              <span className="flex items-center gap-1 text-emerald-400 font-bold bg-emerald-500/10 px-2.5 py-1 rounded-full border border-emerald-500/20 text-[11px]">
-                <span className="inline-block w-1.5 h-1.5 rounded-full bg-emerald-400 animate-ping"></span>
-                {lang === "ar" ? "متصل ببوابة النبضة" : "Active Port: Nabda"}
-              </span>
-            )}
-            {nabdaStatus === "error" && (
-              <span className="flex items-center gap-1 text-red-405 font-bold bg-red-500/10 px-2.5 py-1 rounded-full border border-red-500/20 text-[11px]" title={nabdaErrorDetails}>
-                ⚠️ {lang === "ar" ? "خطأ اتصال" : "Nabda Port Error"}
-              </span>
-            )}
+      {/* 3 Top Status Cards Grid Row as specified */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Card 1: Active Port */}
+        <div className="bg-[#14171D] border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-md">
+          <div className="space-y-1">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Active Port Portals</span>
+            <span className="text-sm font-extrabold text-white font-mono flex items-center gap-1.5">
+              <span className="inline-block w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
+              Nabda Gateway
+            </span>
           </div>
+          <span className="text-xs bg-emerald-500/10 text-emerald-400 px-2.5 py-1 rounded-full font-bold border border-emerald-500/20">Active</span>
+        </div>
 
-          {/* Sandbox Simulation Mode Toggle */}
+        {/* Card 2: Sandbox Simulation Mode */}
+        <div className="bg-[#14171D] border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-md">
+          <div className="space-y-1">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Sandbox Simulation</span>
+            <span className="text-xs font-semibold text-slate-300">
+              {isDemoMode ? "Simulating safe dry runs" : "Real campaign billing runs"}
+            </span>
+          </div>
           <button
             onClick={() => {
               setIsDemoMode(!isDemoMode);
               appendConsoleLog(`Simulation/Sandbox mode ${!isDemoMode ? "ENABLED ✔" : "DISABLED ✘"}`);
             }}
-            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition duration-200 cursor-pointer ${
+            className={`px-3 py-1.5 rounded-xl text-xs font-extrabold border transition duration-200 cursor-pointer ${
               isDemoMode 
-                ? "bg-amber-500/15 text-amber-400 border-amber-500/30 font-extrabold shadow-lg shadow-amber-500/5 hover:bg-amber-500/20" 
-                : "bg-slate-800/40 text-slate-400 border-slate-755 hover:bg-slate-800/80 hover:text-white"
+                ? "bg-amber-500/15 text-amber-400 border-amber-500/30 shadow-lg shadow-amber-500/5 hover:bg-amber-500/20" 
+                : "bg-[#0A0B0E] text-slate-400 border-slate-800 hover:bg-slate-800/80 hover:text-white"
             }`}
           >
-            <span>✨ {lang === "ar" ? "محاكاة الإرسال" : "Sandbox Simulation"}</span>
-            <span className={`w-2 h-2 rounded-full ${isDemoMode ? "bg-amber-400 animate-pulse" : "bg-slate-500"}`}></span>
+            {isDemoMode ? "Simulation Enabled" : "Simulate Send"}
           </button>
+        </div>
 
+        {/* Card 3: Purge Queue Action */}
+        <div className="bg-[#14171D] border border-slate-800 rounded-2xl p-4 flex items-center justify-between shadow-md">
+          <div className="space-y-1">
+            <span className="text-[10px] text-slate-400 font-bold uppercase tracking-wider block">Transmission Pipeline</span>
+            <span className="text-sm font-extrabold font-mono text-white">{totalInQueue} ready queue</span>
+          </div>
           <button
             onClick={() => {
               if (window.confirm(lang === "ar" ? "هل أنت متأكد من مسح قائمة الانتظار الحالية وسجلات المسارات؟" : "Are you sure you want to clear the active candidate queue?")) {
@@ -993,11 +1213,10 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
                 appendConsoleLog("Operations ledger cleared.");
               }
             }}
-            className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-semibold px-3 py-2 rounded-xl transition flex items-center gap-1 cursor-pointer"
-            title={lang === "ar" ? "تصفير الطابور" : "Purge operational pipeline"}
+            className="bg-red-500/10 hover:bg-red-500/20 border border-red-500/20 text-red-400 text-xs font-extrabold px-3 py-1.5 rounded-xl transition flex items-center gap-1 cursor-pointer"
           >
-            <Trash2 size={13} />
-            <span>{lang === "ar" ? "تفريغ الطابور" : "Purge Queue"}</span>
+            <Trash2 size={12} />
+            <span>Purge Queue</span>
           </button>
         </div>
       </div>
@@ -1320,6 +1539,10 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
               </div>
 
             </div>
+
+            {/* Inline validation and control status for Tab 1 */}
+            {renderValidationSummary("gov")}
+            {renderTransmissionControlsAndLogs("gov")}
           </div>
         )}
 
@@ -1406,6 +1629,10 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
               </div>
 
             </div>
+
+            {/* Inline validation and control status for Tab 2 */}
+            {renderValidationSummary("manual")}
+            {renderTransmissionControlsAndLogs("manual")}
           </div>
         )}
 
@@ -1493,17 +1720,17 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
                   </div>
                 </div>
 
-                <div className="bg-[#0A0B0E] border border-slate-800 p-4 rounded-xl space-y-3.5 shadow-inner">
+                <div className="bg-[#0A0B0E] border border-slate-800 p-4 rounded-xl space-y-3.5 shadow-inner font-sans">
                   <textarea
                     value={messageText}
                     onChange={(e) => setMessageText(e.target.value)}
                     rows={4}
                     className="w-full bg-[#12141a] border border-[#2D3139] rounded-lg p-3 text-xs text-white focus:outline-none focus:border-indigo-500 transition font-mono leading-relaxed resize-none"
-                    placeholder={lang === "ar" ? "اكتب دعايتك هنا..." : "Compose your advertising message copy here..."}
+                    placeholder="Write message copy..."
                   />
 
                   {/* Character stats & tag helpers */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-[10px] text-slate-400">
+                  <div className="flex flex-wrap items-center justify-between gap-2 border-t border-slate-800 pt-2.5 text-[10px] text-slate-400 font-sans">
                     <div className="flex items-center gap-1.5 flex-wrap font-sans">
                       <span className="font-bold">{lang === "ar" ? "إدراج متغير:" : "Insert tags:"}</span>
                       <button
@@ -1529,200 +1756,12 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
               </div>
 
             </div>
+
+            {/* Inline validation and control status for Tab 3 */}
+            {renderValidationSummary("csv")}
+            {renderTransmissionControlsAndLogs("csv")}
           </div>
         )}
-
-        {/* STEP 4: INTERACTIVE VALIDATION DISPLAY BANNER */}
-        {validationSummary && (
-          <div className="border border-slate-800 bg-[#0c0e12] rounded-2xl p-5 md:p-6 space-y-4 shadow-xl select-none font-sans animate-fadeIn">
-            
-            {/* Header and stats */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-800 pb-3">
-              <div>
-                <span className="text-[10px] bg-emerald-500/10 text-emerald-400 px-2.5 py-0.5 rounded font-mono font-bold uppercase tracking-wider block w-fit mb-1">
-                  {lang === "ar" ? "تم التحليل والتحقق من التنسيق" : "Verification Complete"}
-                </span>
-                <h3 className="text-sm font-extrabold text-white">
-                  {lang === "ar" ? "📑 تقرير تدقيق وتثبيت الملف" : "📑 Dynamic Dataset Audit Report"}
-                </h3>
-              </div>
-
-              {validationSummary.isCrmFallback && (
-                <span className="text-[10px] bg-indigo-500/10 text-indigo-400 border border-indigo-500/20 px-2.5 py-1 rounded-full font-bold">
-                  {lang === "ar" ? "💡 مسترجع تلقائياً من الـ CRM" : "💡 CRM Central Auto-loaded"}
-                </span>
-              )}
-            </div>
-
-            {/* Statistical grid breakdown */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-              <div className="bg-[#12141a]/60 border border-slate-800/80 p-3.5 rounded-xl text-center">
-                <p className="text-[10px] text-slate-400 uppercase font-bold tracking-wider">{lang === "ar" ? "إجمالي السجلات" : "Total Scanned"}</p>
-                <p className="text-xl font-mono font-black text-white mt-1">{validationSummary.total}</p>
-              </div>
-
-              <div className="bg-emerald-500/5 border border-emerald-500/10 p-3.5 rounded-xl text-center">
-                <p className="text-[10px] text-emerald-450 uppercase font-bold tracking-wider">{lang === "ar" ? "صالحة للإرسال" : "Valid (Ready)"}</p>
-                <p className="text-xl font-mono font-black text-emerald-405 mt-1">{validationSummary.valid}</p>
-              </div>
-
-              <div className="bg-red-500/5 border border-red-500/10 p-3.5 rounded-xl text-center flex flex-col justify-between items-center">
-                <p className="text-[10px] text-red-450 uppercase font-bold tracking-wider">{lang === "ar" ? "أرقام خاطئة" : "Rejected Invalids"}</p>
-                <p className="text-xl font-mono font-black text-red-500 mt-0.5">{validationSummary.invalid}</p>
-              </div>
-
-              <div className="bg-indigo-500/5 border border-indigo-500/10 p-3.5 rounded-xl text-center flex flex-col justify-between items-center">
-                <p className="text-[10px] text-indigo-450 uppercase font-bold tracking-wider">{lang === "ar" ? "أرقام مكررة" : "Duplicates Found"}</p>
-                <p className="text-xl font-mono font-black text-indigo-400 mt-0.5">{validationSummary.duplicates}</p>
-              </div>
-            </div>
-
-            {/* Candidates peek preview list */}
-            {validationSummary.peek.length > 0 && (
-              <div className="bg-black/30 p-4 rounded-xl border border-slate-850 space-y-2 text-xs">
-                <div className="flex justify-between items-center border-b border-slate-800 pb-1.5">
-                  <span className="font-extrabold text-indigo-400 uppercase tracking-widest text-[10px]">
-                    {lang === "ar" ? "📋 عينة عشوائية للمستلمين الجاهزين أول 10 أسطر:" : "📋 Valid Recipient Queue Sample (Top 10 entries):"}
-                  </span>
-                  <span className="text-[9px] text-slate-500 font-mono">Matched total: {validationSummary.valid}</span>
-                </div>
-
-                <div className="max-h-[140px] overflow-y-auto space-y-1.5 pr-1 text-[11px] font-mono leading-relaxed">
-                  {validationSummary.peek.map((r, itemIdx) => (
-                    <div key={itemIdx} className="flex flex-col sm:flex-row sm:justify-between border-b border-slate-900 pb-1 text-slate-300">
-                      <span>{itemIdx + 1}. {r.name} ➔ {r.phone}</span>
-                      <span className="text-slate-500 font-sans text-[10px] sm:text-right mt-0.5 sm:mt-0">
-                        {lang === "ar" ? GOV_AR[r.gov] || r.gov : r.gov} | {r.cat}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
-
-        {/* STEP 5: CORE CAMPAIGN CONTROLLER ENGINE */}
-        <div className="border-t border-slate-800 pt-5 space-y-5">
-          <div className="flex flex-col md:flex-row justify-between items-start md:items-center gap-4">
-            
-            {/* Delay Speed setting & Real-time indices */}
-            <div className="flex flex-wrap items-center gap-4">
-              <div className="space-y-1">
-                <label className="text-[11px] text-slate-400 font-bold uppercase tracking-wider block font-sans">
-                  {lang === "ar" ? "سرعة الإرسال (تأخير بثواني):" : "Transmit Delay spacing:"}
-                </label>
-                <div className="flex items-center gap-2">
-                  <input
-                    type="number"
-                    min="1"
-                    max="60"
-                    value={delaySeconds}
-                    onChange={(e) => setDelaySeconds(Number(e.target.value))}
-                    className="w-20 bg-[#0A0B0E] border border-[#2D3139] rounded px-2.5 py-1 text-white text-xs font-mono font-bold"
-                  />
-                  <span className="text-[10px] text-slate-500 font-mono">{lang === "ar" ? "ثواني بين كل رسالة" : "seconds spacer"}</span>
-                </div>
-              </div>
-
-              {/* Dynamic Queue Indicators */}
-              <div className="flex gap-2.5 select-text pt-2.5">
-                <div className="bg-emerald-500/5 border border-emerald-500/10 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold">{lang === "ar" ? "مكتمل" : "Sent"}</p>
-                  <p className="text-sm font-bold font-mono text-emerald-400">{countSent}</p>
-                </div>
-                <div className="bg-red-500/5 border border-red-500/10 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold">{lang === "ar" ? "فشل" : "Failed"}</p>
-                  <p className="text-sm font-bold font-mono text-red-400">{countFailed}</p>
-                </div>
-                <div className="bg-indigo-500/5 border border-indigo-500/10 px-3 py-1.5 rounded-lg text-center min-w-[70px]">
-                  <p className="text-[9px] text-slate-400 uppercase font-bold">{lang === "ar" ? "متبقي" : "Ready"}</p>
-                  <p className="text-sm font-bold font-mono text-indigo-400">{countRemaining}</p>
-                </div>
-              </div>
-            </div>
-
-            {/* Broadcast action trigger buttons */}
-            <div className="flex flex-wrap items-center gap-3 w-full md:w-auto">
-              {!isSendingActive ? (
-                <button
-                  onClick={startSendingProcess}
-                  className="w-full md:w-auto bg-emerald-500 hover:bg-emerald-400 text-slate-950 font-black px-6 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-2 shadow-lg hover:shadow-emerald-500/10 cursor-pointer"
-                >
-                  <Play size={13} fill="#020617" />
-                  <span>{lang === "ar" ? "▶ بدء بث الإرسال الجماعي" : "▶ Start Broadcast"}</span>
-                </button>
-              ) : (
-                <div className="flex items-center gap-2.5 w-full md:w-auto">
-                  {sendingPaused ? (
-                    <button
-                      onClick={handleResume}
-                      className="flex-1 md:flex-none bg-indigo-500 hover:bg-indigo-400 text-black font-extrabold px-5 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
-                    >
-                      <Play size={13} fill="#000" />
-                      <span>{lang === "ar" ? "استئناف" : "Resume"}</span>
-                    </button>
-                  ) : (
-                    <button
-                      onClick={handlePause}
-                      className="flex-1 md:flex-none bg-amber-500 hover:bg-amber-400 text-black font-extrabold px-5 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer animate-pulse"
-                    >
-                      <Pause size={13} fill="#000" />
-                      <span>{lang === "ar" ? "إيقاف مؤقت" : "Pause"}</span>
-                    </button>
-                  )}
-
-                  <button
-                    onClick={handleStop}
-                    className="flex-1 md:flex-none bg-red-600 hover:bg-red-550 text-white font-extrabold px-5 py-3.5 rounded-xl transition duration-200 flex items-center justify-center gap-1.5 cursor-pointer"
-                  >
-                    <StopCircle size={13} />
-                    <span>{lang === "ar" ? "إنهاء تماماً" : "Stop"}</span>
-                  </button>
-                </div>
-              )}
-            </div>
-
-          </div>
-
-          {/* Real-time Ticker Progression Bar */}
-          {isSendingActive && (
-            <div className="bg-[#0A0B0E] p-4 border border-slate-800 rounded-xl space-y-2 font-mono">
-              <div className="flex justify-between items-center text-[11px] text-slate-450">
-                <span className="flex items-center gap-1">
-                  <span className="inline-block w-2 h-2 rounded-full bg-indigo-505 animate-ping"></span>
-                  Progress Rate: {countSent + countFailed} / {totalInQueue}
-                </span>
-                <span className="text-indigo-400 font-black">{progressPercentage}%</span>
-              </div>
-              <div className="w-full bg-[#14171D] h-2.5 rounded-full overflow-hidden">
-                <div 
-                  className="bg-indigo-500 h-full transition-all duration-300"
-                  style={{ width: `${progressPercentage}%` }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Terminal Console Logs */}
-          <div className="space-y-2">
-            <label className="text-[10px] text-slate-400 font-extrabold uppercase tracking-widest font-mono block">
-              📟 Active Dispatch Ledger Monitor:
-            </label>
-            <div className="bg-black/40 border border-slate-800 rounded-xl p-3 h-[140px] overflow-y-auto font-mono text-[10px] space-y-1 text-left select-all">
-              {sendLogs.length === 0 ? (
-                <p className="text-slate-600 italic">Ledger pipeline cold. Push Play above to stream active log events...</p>
-              ) : (
-                sendLogs.map((log, lIdx) => (
-                  <p key={lIdx} className={log.includes("🟢") ? "text-emerald-400" : log.includes("🔴") ? "text-red-400" : "text-slate-400"}>
-                    {log}
-                  </p>
-                ))
-              )}
-            </div>
-          </div>
-
-        </div>
 
       </div>
 

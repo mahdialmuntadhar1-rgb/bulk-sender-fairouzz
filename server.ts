@@ -134,6 +134,61 @@ async function startServer() {
     });
   });
 
+  // Verify connection to Nabda server proxy
+  app.get("/api/nabda/test", (req, res) => {
+    const apiKey = process.env.NABDA_API_KEY || "";
+    if (!apiKey) {
+      return res.status(400).json({ 
+        success: false, 
+        error: "NABDA_API_KEY is not configured in the server environment variables." 
+      });
+    }
+
+    const options = {
+      hostname: "api.nabdaotp.com",
+      port: 443,
+      path: "/api/v1/messages/send",
+      method: "GET",
+      headers: {
+        "Authorization": apiKey,
+      },
+    };
+
+    const clientReq = https.request(options, (clientRes) => {
+      let body = "";
+      clientRes.on("data", (chunk) => { body += chunk; });
+      clientRes.on("end", () => {
+        // Any status code proves connection succeeded
+        res.json({
+          success: true,
+          statusCode: clientRes.statusCode,
+          secured: true,
+          message: clientRes.statusCode === 401 || clientRes.statusCode === 403 
+            ? "Connected to Nabda, but credentials / API key rejected." 
+            : `Successfully pinged Nabda API (HTTP ${clientRes.statusCode})`
+        });
+      });
+    });
+
+    clientReq.on("error", (err) => {
+      res.status(500).json({ 
+        success: false, 
+        error: `Could not connect to Nabda server: ${err.message}` 
+      });
+    });
+
+    clientReq.on("timeout", () => {
+      clientReq.destroy();
+      res.status(504).json({ 
+        success: false, 
+        error: "Connection timed out connecting to the Nabda server." 
+      });
+    });
+
+    clientReq.setTimeout(5000);
+    clientReq.end();
+  });
+
   // Gemini AI message optimization endpoint
   app.post("/api/gemini/optimize", async (req, res) => {
     const { text, tone, language } = req.body;

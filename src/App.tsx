@@ -15,7 +15,7 @@ import MediaManagerView from "./components/MediaManagerView";
 import BundlesView from "./components/BundlesView";
 import WhatsAppInstancesView from "./components/WhatsAppInstancesView";
 import BillingSecurityView from "./components/BillingSecurityView";
-import { apiGet } from "./apiClient";
+import { apiGet, apiPost } from "./apiClient";
 
 import { 
   LeadStage, 
@@ -144,23 +144,23 @@ export default function App() {
     const cleaningName = name.split("(")[0].trim();
     switch (category) {
       case "Restaurant":
-        return `Ø£Ù‡Ù„Ø§Ù‹ Ø¹ÙŠÙ†ÙŠ Ø´ÙƒØ±Ø§Ù‹ Ù„Ù„Ø¯Ø¹ÙˆØ©.. Ù…Ø¹ÙƒÙ… ÙƒØ§Ø¯Ø± Ù…Ø·Ø¹Ù… ${cleaningName}. Ø´Ù„ÙˆÙ† Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„Ù…Ø¬Ø§Ù†ÙŠ ÙˆØ³Ø±Ø¹Ø© ØªÙØ¹ÙŠÙ„ Ø§Ù„Ø¯Ù„ÙŠÙ„ØŸ`;
+        return `Ã˜Â£Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹ Ã˜Â¹Ã™Å Ã™â€ Ã™Å  Ã˜Â´Ã™Æ’Ã˜Â±Ã˜Â§Ã™â€¹ Ã™â€žÃ™â€žÃ˜Â¯Ã˜Â¹Ã™Ë†Ã˜Â©.. Ã™â€¦Ã˜Â¹Ã™Æ’Ã™â€¦ Ã™Æ’Ã˜Â§Ã˜Â¯Ã˜Â± Ã™â€¦Ã˜Â·Ã˜Â¹Ã™â€¦ ${cleaningName}. Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã˜Â·Ã˜Â±Ã™Å Ã™â€šÃ˜Â© Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¬Ã˜Â§Ã™â€ Ã™Å  Ã™Ë†Ã˜Â³Ã˜Â±Ã˜Â¹Ã˜Â© Ã˜ÂªÃ™ÂÃ˜Â¹Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¯Ã™â€žÃ™Å Ã™â€žÃ˜Å¸`;
       case "Cafe":
-        return `Ù…Ø±Ø­Ø¨Ø§Ù‹ØŒ ÙˆØµÙ„ØªÙ†Ø§ Ø±Ø³Ø§Ù„Ø© Ø´Ø§ÙƒÙˆ Ù…Ø§ÙƒÙˆ. Ù†Ø±ÙŠØ¯ Ù†Ø¶ÙŠÙ Ø§Ù„Ù…Ù†ÙŠÙˆ ÙˆØ§Ù„ØµÙˆØ± Ù…Ø§Ù„ØªÙ†Ø§ Ø¨Ù‚Ø³Ù… Ø¨ØºØ¯Ø§Ø¯/Ø§Ù„Ø¨ØµØ±Ø©ØŒ Ø´Ù„ÙˆÙ† Ù†Ø³ÙˆÙŠØŸ`;
+        return `Ã™â€¦Ã˜Â±Ã˜Â­Ã˜Â¨Ã˜Â§Ã™â€¹Ã˜Å’ Ã™Ë†Ã˜ÂµÃ™â€žÃ˜ÂªÃ™â€ Ã˜Â§ Ã˜Â±Ã˜Â³Ã˜Â§Ã™â€žÃ˜Â© Ã˜Â´Ã˜Â§Ã™Æ’Ã™Ë† Ã™â€¦Ã˜Â§Ã™Æ’Ã™Ë†. Ã™â€ Ã˜Â±Ã™Å Ã˜Â¯ Ã™â€ Ã˜Â¶Ã™Å Ã™Â Ã˜Â§Ã™â€žÃ™â€¦Ã™â€ Ã™Å Ã™Ë† Ã™Ë†Ã˜Â§Ã™â€žÃ˜ÂµÃ™Ë†Ã˜Â± Ã™â€¦Ã˜Â§Ã™â€žÃ˜ÂªÃ™â€ Ã˜Â§ Ã˜Â¨Ã™â€šÃ˜Â³Ã™â€¦ Ã˜Â¨Ã˜ÂºÃ˜Â¯Ã˜Â§Ã˜Â¯/Ã˜Â§Ã™â€žÃ˜Â¨Ã˜ÂµÃ˜Â±Ã˜Â©Ã˜Å’ Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã™â€ Ã˜Â³Ã™Ë†Ã™Å Ã˜Å¸`;
       case "Hotel":
-        return `Ø³Ù„Ø§Ùˆ ÙˆØ¨Ø®ÙŠØ± Ù‡Ø§ØªØ¨ÙŠÙ†.. Ø´ÙƒØ±Ø§Ù‹ Ù„ÙƒÙ…. Ù‡Ù„ ØªÙˆØ¬Ø¯ Ø¨Ø§Ù‚Ø© Ø§Ø´ØªØ±Ø§Ùƒ Ø³Ù†ÙˆÙŠØ© Ù…Ù…ØªØ§Ø²Ø© Ù„ÙÙ†Ø¯Ù‚ ${cleaningName} ÙÙŠ ÙƒØ±Ø¯Ø³ØªØ§Ù†ØŸ`;
+        return `Ã˜Â³Ã™â€žÃ˜Â§Ã™Ë† Ã™Ë†Ã˜Â¨Ã˜Â®Ã™Å Ã˜Â± Ã™â€¡Ã˜Â§Ã˜ÂªÃ˜Â¨Ã™Å Ã™â€ .. Ã˜Â´Ã™Æ’Ã˜Â±Ã˜Â§Ã™â€¹ Ã™â€žÃ™Æ’Ã™â€¦. Ã™â€¡Ã™â€ž Ã˜ÂªÃ™Ë†Ã˜Â¬Ã˜Â¯ Ã˜Â¨Ã˜Â§Ã™â€šÃ˜Â© Ã˜Â§Ã˜Â´Ã˜ÂªÃ˜Â±Ã˜Â§Ã™Æ’ Ã˜Â³Ã™â€ Ã™Ë†Ã™Å Ã˜Â© Ã™â€¦Ã™â€¦Ã˜ÂªÃ˜Â§Ã˜Â²Ã˜Â© Ã™â€žÃ™ÂÃ™â€ Ã˜Â¯Ã™â€š ${cleaningName} Ã™ÂÃ™Å  Ã™Æ’Ã˜Â±Ã˜Â¯Ã˜Â³Ã˜ÂªÃ˜Â§Ã™â€ Ã˜Å¸`;
       case "Beauty Salon":
-        return `ÙØ¯ÙˆØ© Ø¯Ø²ÙˆÙ„Ù†Ø§ ØªÙØ§ØµÙŠÙ„ Ø§Ù„Ø¹Ø±Ø¶ ÙˆØ´Ù„ÙˆÙ† Ù†ÙˆØ«Ù‚ Ø§Ù„Ù„ÙˆÙƒÙŠØ´Ù† Ù…Ø§Ù„ØªÙ†Ø§ ÙˆÙ†Ø¶ÙŠÙ Ù…ÙŠØ²Ø§Øª ØµØ§Ù„ÙˆÙ† Ø§Ù„Ø­Ù„Ø§Ù‚Ø©ØŸ`;
+        return `Ã™ÂÃ˜Â¯Ã™Ë†Ã˜Â© Ã˜Â¯Ã˜Â²Ã™Ë†Ã™â€žÃ™â€ Ã˜Â§ Ã˜ÂªÃ™ÂÃ˜Â§Ã˜ÂµÃ™Å Ã™â€ž Ã˜Â§Ã™â€žÃ˜Â¹Ã˜Â±Ã˜Â¶ Ã™Ë†Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã™â€ Ã™Ë†Ã˜Â«Ã™â€š Ã˜Â§Ã™â€žÃ™â€žÃ™Ë†Ã™Æ’Ã™Å Ã˜Â´Ã™â€  Ã™â€¦Ã˜Â§Ã™â€žÃ˜ÂªÃ™â€ Ã˜Â§ Ã™Ë†Ã™â€ Ã˜Â¶Ã™Å Ã™Â Ã™â€¦Ã™Å Ã˜Â²Ã˜Â§Ã˜Âª Ã˜ÂµÃ˜Â§Ã™â€žÃ™Ë†Ã™â€  Ã˜Â§Ã™â€žÃ˜Â­Ã™â€žÃ˜Â§Ã™â€šÃ˜Â©Ã˜Å¸`;
       case "Pharmacy":
-        return `Ø§Ù„Ø³Ù„Ø§Ù… Ø¹Ù„ÙŠÙƒÙ…ØŒ Ù‡Ù„ Ø§Ù„ØªØ³Ø¬ÙŠÙ„ ÙˆØ§Ù„Ø§Ø¯Ø±Ø§Ø¬ Ù…Ø¬Ø§Ù†ÙŠ Ù„Ù„Ø£Ø¨Ø¯ Ù„Ùˆ Ø§ÙƒÙˆ Ø§Ø´ØªØ±Ø§ÙƒØ§Øª Ù…Ø®ÙÙŠØ© Ø¨Ø¹Ø¯ ÙØªØ±Ø©ØŸ Ø´ÙƒØ±Ø§Ù‹ Ù„Ø¬Ù‡ÙˆØ¯ÙƒÙ….`;
+        return `Ã˜Â§Ã™â€žÃ˜Â³Ã™â€žÃ˜Â§Ã™â€¦ Ã˜Â¹Ã™â€žÃ™Å Ã™Æ’Ã™â€¦Ã˜Å’ Ã™â€¡Ã™â€ž Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã™Ë†Ã˜Â§Ã™â€žÃ˜Â§Ã˜Â¯Ã˜Â±Ã˜Â§Ã˜Â¬ Ã™â€¦Ã˜Â¬Ã˜Â§Ã™â€ Ã™Å  Ã™â€žÃ™â€žÃ˜Â£Ã˜Â¨Ã˜Â¯ Ã™â€žÃ™Ë† Ã˜Â§Ã™Æ’Ã™Ë† Ã˜Â§Ã˜Â´Ã˜ÂªÃ˜Â±Ã˜Â§Ã™Æ’Ã˜Â§Ã˜Âª Ã™â€¦Ã˜Â®Ã™ÂÃ™Å Ã˜Â© Ã˜Â¨Ã˜Â¹Ã˜Â¯ Ã™ÂÃ˜ÂªÃ˜Â±Ã˜Â©Ã˜Å¸ Ã˜Â´Ã™Æ’Ã˜Â±Ã˜Â§Ã™â€¹ Ã™â€žÃ˜Â¬Ã™â€¡Ã™Ë†Ã˜Â¯Ã™Æ’Ã™â€¦.`;
       case "Clinic":
-        return `Ù…Ø±Ø­Ø¨Ø§Ù‹ Ø¨ÙƒØŒ Ù†Ø­Ù† Ø¹ÙŠØ§Ø¯Ø© Ø·Ø¨ÙŠØ© Ù…ØªÙƒØ§Ù…Ù„Ø©. Ù†ÙˆØ¯ Ø§Ù„Ø­ØµÙˆÙ„ Ø¹Ù„Ù‰ ØªÙØ§ØµÙŠÙ„ Ø¥Ø¶Ø§ÙÙŠØ© Ø­ÙˆÙ„ Ø§Ù„ØªØ±ÙˆÙŠØ¬ Ø§Ù„Ù…Ø¨Ø§Ø´Ø±.`;
+        return `Ã™â€¦Ã˜Â±Ã˜Â­Ã˜Â¨Ã˜Â§Ã™â€¹ Ã˜Â¨Ã™Æ’Ã˜Å’ Ã™â€ Ã˜Â­Ã™â€  Ã˜Â¹Ã™Å Ã˜Â§Ã˜Â¯Ã˜Â© Ã˜Â·Ã˜Â¨Ã™Å Ã˜Â© Ã™â€¦Ã˜ÂªÃ™Æ’Ã˜Â§Ã™â€¦Ã™â€žÃ˜Â©. Ã™â€ Ã™Ë†Ã˜Â¯ Ã˜Â§Ã™â€žÃ˜Â­Ã˜ÂµÃ™Ë†Ã™â€ž Ã˜Â¹Ã™â€žÃ™â€° Ã˜ÂªÃ™ÂÃ˜Â§Ã˜ÂµÃ™Å Ã™â€ž Ã˜Â¥Ã˜Â¶Ã˜Â§Ã™ÂÃ™Å Ã˜Â© Ã˜Â­Ã™Ë†Ã™â€ž Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â±Ã™Ë†Ã™Å Ã˜Â¬ Ã˜Â§Ã™â€žÃ™â€¦Ã˜Â¨Ã˜Â§Ã˜Â´Ã˜Â±.`;
       default:
-        return `Ø£Ù‡Ù„Ø§Ù‹ ÙˆØ³Ù‡Ù„Ø§Ù‹ Ø¹ÙŠÙˆÙ†ÙŠØŒ Ù…Ù‡ØªÙ…ÙŠÙ† Ø¬Ø¯Ø§Ù‹ Ø¨Ø§Ù„Ø§Ù†Ø¶Ù…Ø§Ù… Ù„Ù„Ø¯Ù„ÙŠÙ„ Ù…Ø¹ Ù…Ù†ØµØªÙƒÙ… Ø´Ø§ÙƒÙˆ Ù…Ø§ÙƒÙˆ. Ø¨Ø§Ù†ØªØ¸Ø§Ø± Ø§Ù„ØªÙØ§ØµÙŠÙ„ Ø®Ø·ÙˆØ© Ø¨Ø®Ø·ÙˆØ©.`;
+        return `Ã˜Â£Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹ Ã™Ë†Ã˜Â³Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹ Ã˜Â¹Ã™Å Ã™Ë†Ã™â€ Ã™Å Ã˜Å’ Ã™â€¦Ã™â€¡Ã˜ÂªÃ™â€¦Ã™Å Ã™â€  Ã˜Â¬Ã˜Â¯Ã˜Â§Ã™â€¹ Ã˜Â¨Ã˜Â§Ã™â€žÃ˜Â§Ã™â€ Ã˜Â¶Ã™â€¦Ã˜Â§Ã™â€¦ Ã™â€žÃ™â€žÃ˜Â¯Ã™â€žÃ™Å Ã™â€ž Ã™â€¦Ã˜Â¹ Ã™â€¦Ã™â€ Ã˜ÂµÃ˜ÂªÃ™Æ’Ã™â€¦ Ã˜Â´Ã˜Â§Ã™Æ’Ã™Ë† Ã™â€¦Ã˜Â§Ã™Æ’Ã™Ë†. Ã˜Â¨Ã˜Â§Ã™â€ Ã˜ÂªÃ˜Â¸Ã˜Â§Ã˜Â± Ã˜Â§Ã™â€žÃ˜ÂªÃ™ÂÃ˜Â§Ã˜ÂµÃ™Å Ã™â€ž Ã˜Â®Ã˜Â·Ã™Ë†Ã˜Â© Ã˜Â¨Ã˜Â®Ã˜Â·Ã™Ë†Ã˜Â©.`;
     }
   };
 
-  // âš¡ Active Dispatch Interval Engine (Background Simulated Webhook Worker)
+  // Ã¢Å¡Â¡ Active Dispatch Interval Engine (Background Simulated Webhook Worker)
   useEffect(() => {
     // Find first campaign that is running
     const activeCamp = campaigns.find(c => c.status === "running");
@@ -348,53 +348,73 @@ export default function App() {
   }, [campaigns, contacts, templates]);
 
 
-  // âš¡ Manual Single WhatsApp Sim Send
-  const handleSimulateSingleSend = (contactId: string, templateId: string) => {
+  // Manual Single WhatsApp Dry-Run Send through Cloudflare Worker
+  const handleSimulateSingleSend = async (contactId: string, templateId: string) => {
     const contact = contacts.find(c => c.id === contactId);
     const template = templates.find(t => t.id === templateId) || templates[0];
-    if (!contact) return;
 
-    setContacts(p => p.map(c => {
-      if (c.id === contactId) {
-        return {
-          ...c,
-          lastMessageStatus: "sent",
-          leadStage: LeadStage.SENT,
-          assignedTemplateId: templateId,
-          updatedAt: new Date().toISOString()
-        };
-      }
-      return c;
-    }));
+    if (!contact || !template) return;
 
-    // Raise outbound sent event
-    const mId = `msg_single_${Date.now()}`;
-    setEvents(p => [
-      {
-        id: `sim_sv_${Date.now()}`,
-        eventId: `evt_nabda_${Math.floor(Math.random() * 900000) + 100000}`,
-        eventType: "message.sent",
+    try {
+      const result = await apiPost("/api/send-one", {
         phone: contact.phone,
-        messageId: mId,
-        status: "sent",
-        timestamp: new Date().toISOString(),
-        payload: { messageId: mId, to: contact.phone, text: template.text, api: "manual" }
-      },
-      ...p
-    ]);
+        message: template.text,
+        businessName: contact.businessName,
+        dryRun: true
+      });
 
-    // Progressive delivered and read receipt timeouts
-    setTimeout(() => {
-      setContacts(p => p.map(c => c.id === contactId ? { ...c, lastMessageStatus: "delivered", leadStage: LeadStage.DELIVERED } : c));
-    }, 1000);
+      setContacts(p => p.map(c => {
+        if (c.id === contactId) {
+          return {
+            ...c,
+            lastMessageStatus: "sent",
+            leadStage: LeadStage.SENT,
+            assignedTemplateId: templateId,
+            notes: `${c.notes || ""}\n[Dry Run] Worker accepted test send. No real WhatsApp message was sent.`,
+            updatedAt: new Date().toISOString()
+          };
+        }
 
-    setTimeout(() => {
-      setContacts(p => p.map(c => c.id === contactId ? { ...c, lastMessageStatus: "read", leadStage: LeadStage.READ } : c));
-    }, 2200);
+        return c;
+      }));
+
+      const mId = `msg_worker_dry_${Date.now()}`;
+
+      setEvents(p => [
+        {
+          id: `worker_dry_${Date.now()}`,
+          eventId: `evt_worker_dry_${Math.floor(Math.random() * 900000) + 100000}`,
+          eventType: "message.sent",
+          phone: contact.phone,
+          messageId: mId,
+          status: "sent",
+          timestamp: new Date().toISOString(),
+          payload: {
+            messageId: mId,
+            to: contact.phone,
+            text: template.text,
+            api: "worker",
+            dryRun: true,
+            workerResponse: result
+          }
+        },
+        ...p
+      ]);
+
+      alert("Dry-run saved to D1 logs. No real WhatsApp message was sent.");
+    } catch (error: any) {
+      setContacts(p => p.map(c => c.id === contactId ? {
+        ...c,
+        lastMessageStatus: "failed",
+        notes: `${c.notes || ""}\n[Dry Run Failed] ${error?.message || "Unknown error"}`,
+        updatedAt: new Date().toISOString()
+      } : c));
+
+      alert(`Dry-run failed: ${error?.message || "Unknown error"}`);
+    }
   };
 
-
-  // âœï¸ Leads Stage Manual override
+  // Leads Stage Manual override
   const handleUpdateLeadStage = (id: string, stage: LeadStage) => {
     setContacts(prev => prev.map(c => {
       if (c.id === id) {
@@ -426,7 +446,7 @@ export default function App() {
     }));
   };
 
-  // âž• Create Contact Manual Onboarding
+  // Ã¢Å¾â€¢ Create Contact Manual Onboarding
   const handleAddContact = (newContact: Omit<Contact, "id" | "updatedAt">) => {
     const contactRecord: Contact = {
       ...newContact,
@@ -437,7 +457,7 @@ export default function App() {
   };
 
 
-  // âž• Create Campaign
+  // Ã¢Å¾â€¢ Create Campaign
   const handleCreateCampaign = (campData: Omit<Campaign, "id" | "totalSent" | "delivered" | "read" | "replied" | "interested" | "registered" | "createdAt" | "status">) => {
     const newCamp: Campaign = {
       ...campData,
@@ -459,7 +479,7 @@ export default function App() {
   };
 
 
-  // âž• Create template
+  // Ã¢Å¾â€¢ Create template
   const handleCreateTemplate = (tempData: Omit<MessageTemplate, "id">) => {
     const newTemp: MessageTemplate = {
       ...tempData,
@@ -473,7 +493,7 @@ export default function App() {
   };
 
 
-  // ðŸ“¥ Micro action Inbox Macros
+  // Ã°Å¸â€œÂ¥ Micro action Inbox Macros
   const handleMarkInterested = (phone: string) => {
     setContacts(prev => prev.map(c => c.phone === phone ? { ...c, leadStage: LeadStage.INTERESTED, updatedAt: new Date().toISOString() } : c));
     setInbox(prev => prev.map(m => m.phone === phone ? { ...m, isRead: true } : m));
@@ -501,7 +521,7 @@ export default function App() {
         messageId: `msg_reglink_${Date.now()}`,
         status: "sent",
         timestamp: new Date().toISOString(),
-        payload: { text: "Ø¹Ø²ÙŠØ²ÙŠØŒ Ù‡Ø°Ø§ Ù‡Ùˆ Ø±Ø§Ø¨Ø· Ø§Ù„ØªØ³Ø¬ÙŠÙ„ Ø§Ù„ÙÙˆØ±ÙŠ ÙÙŠ Ù…Ù†ØµØ© Ø´Ø§ÙƒÙˆ Ù…Ø§ÙƒÙˆ: https://shakumaku.iq/signup", type: "text_cta" }
+        payload: { text: "Ã˜Â¹Ã˜Â²Ã™Å Ã˜Â²Ã™Å Ã˜Å’ Ã™â€¡Ã˜Â°Ã˜Â§ Ã™â€¡Ã™Ë† Ã˜Â±Ã˜Â§Ã˜Â¨Ã˜Â· Ã˜Â§Ã™â€žÃ˜ÂªÃ˜Â³Ã˜Â¬Ã™Å Ã™â€ž Ã˜Â§Ã™â€žÃ™ÂÃ™Ë†Ã˜Â±Ã™Å  Ã™ÂÃ™Å  Ã™â€¦Ã™â€ Ã˜ÂµÃ˜Â© Ã˜Â´Ã˜Â§Ã™Æ’Ã™Ë† Ã™â€¦Ã˜Â§Ã™Æ’Ã™Ë†: https://shakumaku.iq/signup", type: "text_cta" }
       },
       ...p
     ]);
@@ -529,7 +549,7 @@ export default function App() {
   };
 
 
-  // ðŸ’¬ Inject Simulated Random Incoming Message
+  // Ã°Å¸â€™Â¬ Inject Simulated Random Incoming Message
   const handleTriggerSimulatedReply = (customText?: string) => {
     // Pick first contact that has received messages but hasn't replied yet, or fallback to standard
     const activeCandidates = contacts.filter(c => c.lastMessageStatus !== "none" && c.leadStage !== LeadStage.REGISTERED);
@@ -537,7 +557,7 @@ export default function App() {
       ? activeCandidates[Math.floor(Math.random() * activeCandidates.length)]
       : contacts[0];
 
-    const messageText = customText || "Ø£Ù‡Ù„Ø§Ù‹ØŒ Ø­Ø§Ø¨ÙŠÙ† Ù†Ø´ØªØ±Ùƒ ÙˆÙŠØ§ÙƒÙ…. Ø´Ù„ÙˆÙ† Ø·Ø±ÙŠÙ‚Ø© Ø§Ù„Ø¯ÙØ¹ Ù„Ùˆ Ù…Ø¬Ø§Ù†ÙŠØŸ";
+    const messageText = customText || "Ã˜Â£Ã™â€¡Ã™â€žÃ˜Â§Ã™â€¹Ã˜Å’ Ã˜Â­Ã˜Â§Ã˜Â¨Ã™Å Ã™â€  Ã™â€ Ã˜Â´Ã˜ÂªÃ˜Â±Ã™Æ’ Ã™Ë†Ã™Å Ã˜Â§Ã™Æ’Ã™â€¦. Ã˜Â´Ã™â€žÃ™Ë†Ã™â€  Ã˜Â·Ã˜Â±Ã™Å Ã™â€šÃ˜Â© Ã˜Â§Ã™â€žÃ˜Â¯Ã™ÂÃ˜Â¹ Ã™â€žÃ™Ë† Ã™â€¦Ã˜Â¬Ã˜Â§Ã™â€ Ã™Å Ã˜Å¸";
     
     setContacts(p => p.map(c => c.id === chosenContact.id ? { 
       ...c, 

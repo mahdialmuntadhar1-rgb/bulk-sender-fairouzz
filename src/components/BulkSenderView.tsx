@@ -268,7 +268,20 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       const lines = text.split(/\r?\n/).map(l => l.trim()).filter(Boolean);
       if (lines.length < 2) continue;
 
-      const headers = lines[0].split(",").map(h => h.trim().replace(/^["']|["']$/g, ""));
+      // Sniff CSV separator: supports Comma, Semicolon, and Tab (for Arabic/European excel CSV exports)
+      const firstLine = lines[0];
+      let separator = ",";
+      const commaCount = (firstLine.match(/,/g) || []).length;
+      const semiCount = (firstLine.match(/;/) || []).length ? (firstLine.match(/;/g) || []).length : 0;
+      const tabCount = (firstLine.match(/\t/) || []).length ? (firstLine.match(/\t/g) || []).length : 0;
+      
+      if (semiCount > commaCount && semiCount > tabCount) {
+        separator = ";";
+      } else if (tabCount > commaCount && tabCount > semiCount) {
+        separator = "\t";
+      }
+
+      const headers = firstLine.split(separator).map(h => h.trim().replace(/^["']|["']$/g, ""));
 
       const findIdx = (patternList: string[]) => {
         return headers.findIndex(h => {
@@ -277,12 +290,37 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
         });
       };
 
-      const pIdx = findIdx(PHONE_HEADERS);
+      let pIdx = findIdx(PHONE_HEADERS);
       const nIdx = findIdx(NAME_HEADERS);
       const gIdx = findIdx(GOV_HEADERS);
       const cIdx = findIdx(CAT_HEADERS);
 
-      for (let i = 1; i < lines.length; i++) {
+      // Auto-detect phone column index fallback if headers have no matching labels
+      if (pIdx === -1) {
+        const sampleLine = lines.length > 1 ? lines[1] : lines[0];
+        const sampleCells = sampleLine.split(separator).map(c => c.trim().replace(/^["']|["']$/g, ""));
+        const detectedPhoneIdx = sampleCells.findIndex(cell => {
+          const cleanedDigits = cell.replace(/[^\d]/g, "");
+          return cleanedDigits.length >= 7 && (cleanedDigits.startsWith("07") || cleanedDigits.startsWith("7") || cleanedDigits.startsWith("96"));
+        });
+        if (detectedPhoneIdx !== -1) {
+          pIdx = detectedPhoneIdx;
+          appendConsoleLog(`ℹ️ Could not find 'phone' column header. Auto-detected column ${detectedPhoneIdx + 1} as phone number field.`);
+        } else {
+          pIdx = 0; // Default fallback to first column
+        }
+      }
+
+      // Sniff whether first line is actually data (no headers present)
+      let parseStartLine = 1;
+      const firstLineRawCells = lines[0].split(separator).map(c => c.trim().replace(/^["']|["']$/g, ""));
+      const pCellOnFirst = pIdx !== -1 && firstLineRawCells[pIdx] ? firstLineRawCells[pIdx] : "";
+      if (pCellOnFirst && normalizeIraqPhone(pCellOnFirst).isValid) {
+        parseStartLine = 0;
+        appendConsoleLog(`ℹ️ First line of spreadsheet parsed directly as contact data.`);
+      }
+
+      for (let i = parseStartLine; i < lines.length; i++) {
         const line = lines[i];
         const cells: string[] = [];
         let curr = "";
@@ -290,7 +328,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
         for (let c = 0; c < line.length; c++) {
           const char = line[c];
           if (char === '"' || char === "'") inQuotes = !inQuotes;
-          else if (char === ',' && !inQuotes) {
+          else if (char === separator && !inQuotes) {
             cells.push(curr.trim().replace(/^["']|["']$/g, ""));
             curr = "";
           } else curr += char;
@@ -317,18 +355,27 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     setCsvFileName(fileNames.join(", "));
     setCsvSourceRows(accumulatedRows);
     appendConsoleLog(`CSV spreadsheet parsing complete: Loaded ${accumulatedRows.length} total raw lines.`);
+    
+    // Auto-validate and load the batch into bulk pipeline immediately
+    autoValidateCsvData(accumulatedRows);
   };
 
-  // PREVIEW & VALIDATION ACTION WORKERS FOR EACH TAB
+  const autoValidateCsvData = (rows: any[]) => {
+    if (rows.length === 0) return;
+    appendConsoleLog(`⚡ Ingesting ${rows.length} spreadsheet records...`);
+    const generated = runValidateCsv(rows);
+    appendConsoleLog(`✨ Primary pipeline ready with ${generated.length} candidates loaded.`);
+  };
 
-  // TAB 1: Governorate validation
-  const handleValidateGovTab = () => {
+  // PREVIEW & VALIDATION SYSTEM MODULES FOR EACH CAMPAIGN SOURCE TYPE
+
+  const runValidateGov = (): QueueItem[] => {
     if (selectedGovernorates.length === 0) {
       alert(lang === "ar" 
         ? "يرجى تحديد محافظة واحدة على الأقل للاستهداف!" 
         : "Please select at least one governorate first!"
       );
-      return;
+      return [];
     }
 
     let sourceRows: any[] = [];
@@ -357,7 +404,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
         ? "تنبيه: لم يتم العثور على أي أرقام هواتف للمحافظات المحددة!" 
         : "No phone contacts found matching the selected governorates!"
       );
-      return;
+      return [];
     }
 
     let validCount = 0;
@@ -398,7 +445,6 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       });
     });
 
-    // Populate active queue
     setQueue(newQueueItems);
     if (localInvalids.length > 0) setInvalidList(prev => [...localInvalids, ...prev]);
     if (localDuplicates.length > 0) setDuplicateList(prev => [...localDuplicates, ...prev]);
@@ -420,14 +466,14 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     });
 
     appendConsoleLog(`Prepared Governorate Campaign: ${validCount} valid targets mapped into pipeline.`);
+    return newQueueItems;
   };
 
-  // TAB 2: Manual Input processing
-  const handleValidateManualTab = () => {
+  const runValidateManual = (): QueueItem[] => {
     const rawLines = manualText.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
     if (rawLines.length === 0) {
       alert(lang === "ar" ? "يرجى كتابة أرقام الهواتف أولاً في المربع لتحليلها!" : "Please write phone numbers inside the text area first!");
-      return;
+      return [];
     }
 
     let validCount = 0;
@@ -488,15 +534,10 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     });
 
     appendConsoleLog(`Prepared Manual Campaign: ${validCount} phone numbers verified in queue.`);
+    return newQueueItems;
   };
 
-  // TAB 3: Full CSV Campaign processing
-  const handleValidateFullCsvTab = () => {
-    if (csvSourceRows.length === 0) {
-      alert(lang === "ar" ? "يرجى رفع ملف الـ CSV أولاً ليتم تحليله وفحصه!" : "Please upload a CSV file to begin analysis first!");
-      return;
-    }
-
+  const runValidateCsv = (rowsToValidate: any[]): QueueItem[] => {
     let validCount = 0;
     let invalidCount = 0;
     let dupCount = 0;
@@ -505,7 +546,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
     const localDuplicates: any[] = [];
     const seenInBatch = new Set<string>();
 
-    csvSourceRows.forEach(row => {
+    rowsToValidate.forEach(row => {
       const res = normalizeIraqPhone(row.rawPhone);
       if (!res.isValid) {
         invalidCount++;
@@ -541,7 +582,7 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
 
     setValidationSummary({
       tab: "csv",
-      total: csvSourceRows.length,
+      total: rowsToValidate.length,
       valid: validCount,
       invalid: invalidCount,
       duplicates: dupCount,
@@ -554,7 +595,25 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       }))
     });
 
-    appendConsoleLog(`Prepared Full CSV Campaign: Evaluated ${csvSourceRows.length} rows, found ${validCount} valid entries.`);
+    appendConsoleLog(`Prepared Full CSV Campaign: Evaluated ${rowsToValidate.length} rows, found ${validCount} valid entries.`);
+    return newQueueItems;
+  };
+
+  // Event handlers for manual click interactions
+  const handleValidateGovTab = () => {
+    runValidateGov();
+  };
+
+  const handleValidateManualTab = () => {
+    runValidateManual();
+  };
+
+  const handleValidateFullCsvTab = () => {
+    if (csvSourceRows.length === 0) {
+      alert(lang === "ar" ? "يرجى رفع ملف الـ CSV أولاً ليتم تحليله وفحصه!" : "Please upload a CSV file to begin analysis first!");
+      return;
+    }
+    runValidateCsv(csvSourceRows);
   };
 
   // DISPATCH TRANSMITTER CORE LOOP LOGIC
@@ -565,14 +624,48 @@ export default function BulkSenderView({ lang }: BulkSenderViewProps) {
       return;
     }
 
-    const readyItems = queue.filter(q => q.status === "ready");
+    let activeQueue = [...queue];
+    let readyItems = activeQueue.filter(q => q.status === "ready");
+
+    if (readyItems.length === 0) {
+      appendConsoleLog("Queue was uninitialized. Programmatically compiling campaign variables...");
+      if (activeTab === "csv") {
+        if (csvSourceRows.length > 0) {
+          const generated = runValidateCsv(csvSourceRows);
+          activeQueue = generated;
+          readyItems = generated.filter(q => q.status === "ready");
+        }
+      } else if (activeTab === "gov") {
+        if (selectedGovernorates.length > 0) {
+          const generated = runValidateGov();
+          activeQueue = generated;
+          readyItems = generated.filter(q => q.status === "ready");
+        }
+      } else if (activeTab === "manual") {
+        if (manualText.trim()) {
+          const generated = runValidateManual();
+          activeQueue = generated;
+          readyItems = generated.filter(q => q.status === "ready");
+        }
+      }
+    }
+
     if (readyItems.length === 0) {
       alert(lang === "ar" 
-        ? "لا توجد أي أرقام بحالة 'جاهزة' للإرسال! اضغط 'معاينة وفحص' في الأعلى لملء طابور الجدولة أولاً." 
-        : "No contacts found with status 'Ready'! Please click 'Preview & Validate' above to populate the queue first."
+        ? "لا توجد أي أرقام بحالة 'جاهزة' للإرسال! الرجاء رفع ملف الـ CSV أو إدخال الأرقام أولاً." 
+        : "No contacts found with status 'Ready'! Please upload a CSV or enter numbers first."
       );
       return;
     }
+
+    // Set Ref values direct to prevent execution timing races or state synchronicity lag
+    sendingRef.current = {
+      isSendingActive: true,
+      sendingPaused: false,
+      queue: activeQueue,
+      activeQueueIndex: null,
+      delaySeconds
+    };
 
     setIsSendingActive(true);
     setSendingPaused(false);

@@ -39,6 +39,24 @@ export default function SettingsView({
   const [testResult, setTestResult] = useState<string | null>(null);
   const [isSaving, setIsSaving] = useState(false);
 
+  // Live status monitoring states
+  const [statusData, setStatusData] = useState<{
+    secured: boolean;
+    maskedKey: string;
+    geminiSecured: boolean;
+    geminiMaskedKey: string;
+  } | null>(null);
+
+  React.useEffect(() => {
+    fetch("/api/status")
+      .then((res) => {
+        if (res.ok) return res.json();
+        throw new Error();
+      })
+      .then((data) => setStatusData(data))
+      .catch(() => {});
+  }, []);
+
   const handleSave = (e: React.FormEvent) => {
     e.preventDefault();
     setIsSaving(true);
@@ -290,6 +308,60 @@ export default function SettingsView({
 
         {/* Technical help column (Column 3) */}
         <div className="bg-slate-900/60 p-4 md:p-5 border border-slate-800 rounded-2xl h-fit space-y-4">
+          
+          {/* Real-time backend key status visual badges */}
+          <div className="space-y-3 pb-4 border-b border-slate-800">
+            <h4 className="text-[11px] font-bold text-slate-300 uppercase tracking-wider">
+              {lang === "ar" ? "📡 حالة الاتصال الحية (Backend API Status)" : "📡 Secure API Connection Status"}
+            </h4>
+            
+            <div className="space-y-2">
+              {/* Nabda WABA key status */}
+              <div className="bg-slate-950/80 rounded-xl p-3 border border-slate-850 flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-slate-400 block font-semibold leading-none">Nabda WABA Integration</span>
+                  <span className="text-[8px] font-mono text-slate-500 block leading-none select-all mt-1">
+                    {statusData?.secured ? statusData.maskedKey : "No key configured"}
+                  </span>
+                </div>
+                <div>
+                  {statusData?.secured ? (
+                    <span className="text-[9px] font-bold bg-green-500/10 text-green-400 border border-green-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-sans">
+                      <span className="w-1.5 h-1.5 rounded-full bg-green-400 animate-pulse" />
+                      ACTIVE
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold bg-red-500/10 text-red-500/80 border border-red-500/20 px-2 py-0.5 rounded-full font-sans">
+                      MISSING
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Gemini AI key status */}
+              <div className="bg-slate-950/80 rounded-xl p-3 border border-slate-850 flex items-center justify-between gap-3">
+                <div className="space-y-0.5">
+                  <span className="text-[10px] text-[#8E9299] block font-semibold leading-none">Gemini Copilot 3.5 AI</span>
+                  <span className="text-[8px] font-mono text-slate-505 block leading-none select-all mt-1">
+                    {statusData?.geminiSecured ? statusData.geminiMaskedKey : "Simulator mode only"}
+                  </span>
+                </div>
+                <div>
+                  {statusData?.geminiSecured ? (
+                    <span className="text-[9px] font-bold bg-purple-500/10 text-purple-400 border border-purple-500/20 px-2 py-0.5 rounded-full flex items-center gap-1 font-sans">
+                      <span className="w-1.5 h-1.5 rounded-full bg-purple-400 animate-pulse" />
+                      ACTIVE
+                    </span>
+                  ) : (
+                    <span className="text-[9px] font-bold bg-amber-500/10 text-amber-500 border border-amber-500/20 px-2 py-0.5 rounded-full font-sans">
+                      UNSET / DEMO
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
           <h3 className="text-xs font-bold text-slate-300 pb-3 border-b border-slate-800 uppercase flex items-center gap-1.5">
             <Shield className="text-amber-500" size={14} />
             {txt.authDetailsTitle}

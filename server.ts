@@ -3,6 +3,26 @@ import path from "path";
 import fs from "fs";
 import https from "https";
 import { createServer as createViteServer } from "vite";
+import { GoogleGenAI } from "@google/genai";
+
+let aiClient: any = null;
+function getGeminiClient() {
+  if (!aiClient) {
+    const apiKey = process.env.GEMINI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GEMINI_API_KEY is not configured on the master server. Please assign it in environment variables or Secrets panel.");
+    }
+    aiClient = new GoogleGenAI({
+      apiKey,
+      httpOptions: {
+        headers: {
+          "User-Agent": "aistudio-build",
+        },
+      },
+    });
+  }
+  return aiClient;
+}
 
 async function startServer() {
   const app = express();
@@ -98,10 +118,13 @@ async function startServer() {
   // Check state of the configuration
   app.get("/api/status", (req, res) => {
     const apiKey = process.env.NABDA_API_KEY || "";
+    const geminiKey = process.env.GEMINI_API_KEY || "";
     res.json({
       status: "online",
       secured: apiKey.length > 0,
       maskedKey: apiKey ? `${apiKey.slice(0, 4)}***${apiKey.slice(-4)}` : "NOT_CONFIGURED",
+      geminiSecured: geminiKey.length > 0,
+      geminiMaskedKey: geminiKey ? `${geminiKey.slice(0, 4)}***${geminiKey.slice(-4)}` : "NOT_CONFIGURED",
       logsCount: {
         sent: fs.existsSync(paths.sent) ? fs.readFileSync(paths.sent, "utf8").split("\n").length - 2 : 0,
         failed: fs.existsSync(paths.failed) ? fs.readFileSync(paths.failed, "utf8").split("\n").length - 2 : 0,
@@ -109,6 +132,41 @@ async function startServer() {
         dnd: fs.existsSync(paths.dnd) ? fs.readFileSync(paths.dnd, "utf8").split("\n").length - 2 : 0,
       },
     });
+  });
+
+  // Gemini AI message optimization endpoint
+  app.post("/api/gemini/optimize", async (req, res) => {
+    const { text, tone, language } = req.body;
+    if (!text) {
+      return res.status(400).json({ error: "Text to optimize is required." });
+    }
+
+    try {
+      const ai = getGeminiClient();
+      
+      const systemInstruction = `You are "Shaku Maku Sales Copilot", an expert copywriter specializing in short-form SMS and WhatsApp promotional broadcasting for Iraqi businesses and merchants in Baghdad, Basra, Erbil, Mosul, etc. Include appropriate local flavor if requested, or translate accurately.
+      Your task is to transform outreach templates to sound highly authentic, trustworthy, polite, respectful, and custom-tailored to the chosen tone and language.
+      Keep the final promotional message clear, engaging, and strictly under 255 characters.
+      Only return the optimized plain text copy itself. Never prefix it, never wrap it in quotes, and never include markdown formatting tags like code blocks.`;
+
+      const response = await ai.models.generateContent({
+        model: "gemini-3.5-flash",
+        contents: `Please optimize the following outreach copy:
+        - Input Copy: "${text}"
+        - Target Tone: ${tone || "friendly & marketing value focused"}
+        - Target Dialect/Language: ${language || "Iraqi Arabic"}`,
+        config: {
+          systemInstruction,
+          temperature: 0.75,
+        }
+      });
+
+      const optimizedText = response.text ? response.text.trim() : "";
+      res.json({ success: true, optimizedText });
+    } catch (err: any) {
+      console.error("Gemini optimization endpoint error:", err);
+      res.status(500).json({ error: `Gemini AI service error: ${err.message}` });
+    }
   });
 
   // Main message proxy sender

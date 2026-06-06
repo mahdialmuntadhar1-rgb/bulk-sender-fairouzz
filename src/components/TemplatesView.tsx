@@ -35,6 +35,45 @@ export default function TemplatesView({
   const [ctaType, setCtaType] = useState<MessageTemplate["ctaType"]>("reply_1");
   const [language, setLanguage] = useState<MessageTemplate["language"]>("Arabic");
 
+  // Gemini assistant states
+  const [aiTone, setAiTone] = useState("friendly_respectful");
+  const [aiLangStyle, setAiLangStyle] = useState("Iraqi Arabic");
+  const [aiLoading, setAiLoading] = useState(false);
+  const [aiError, setAiError] = useState("");
+
+  const handleAiOptimize = async () => {
+    if (!text.trim()) {
+      setAiError(lang === "ar" ? "يرجى كتابة مسودة رسالة أولاً لكي يقوم الذكاء الاصطناعي بتحسينها." : "Please write a draft copy first for the AI to optimize.");
+      return;
+    }
+    setAiLoading(true);
+    setAiError("");
+    try {
+      const response = await fetch("/api/gemini/optimize", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          text,
+          tone: aiTone,
+          language: aiLangStyle
+        })
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.error || "Failed to contact Gemini endpoint.");
+      }
+      if (data.optimizedText) {
+        setText(data.optimizedText.slice(0, 255));
+      } else {
+        throw new Error("Empty response received from AI.");
+      }
+    } catch (err: any) {
+      setAiError(err.message || "Something went wrong.");
+    } finally {
+      setAiLoading(false);
+    }
+  };
+
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if (!name.trim() || !text.trim()) return;
@@ -196,6 +235,80 @@ export default function TemplatesView({
               <p className="text-[11px] text-slate-500 italic">
                 {lang === "ar" ? txt.lblTextDescAr : txt.lblTextDescEn}
               </p>
+
+              {/* Gemini AI Smart Assistant Panel */}
+              <div className="bg-[#191D24]/60 border border-[#C5A059]/15 rounded-xl p-4 mt-3 space-y-3">
+                <div className="flex items-center gap-2 justify-between">
+                  <span className="text-xs font-bold text-white flex items-center gap-1.5">
+                    <Sparkles size={14} className="text-[#C5A059]" />
+                    {lang === "ar" ? "مساعد الصياغة بالذكاء الاصطناعي (Gemini Copilot)" : "AI Copilot Copywriter (Gemini 3.5)"}
+                  </span>
+                  <span className="text-[9px] bg-[#C5A059]/10 text-[#C5A059] px-2 py-0.5 rounded font-mono font-semibold uppercase tracking-wider">
+                    powered by gemini
+                  </span>
+                </div>
+                
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-[#8E9299] font-medium block">
+                      {lang === "ar" ? "نبرة الصوت المستهدفة" : "Target Outreach Tone"}
+                    </span>
+                    <select
+                      value={aiTone}
+                      onChange={(e) => setAiTone(e.target.value)}
+                      className="w-full bg-[#14171D] border border-[#2D3139] rounded-lg px-2.5 py-1.5 text-[11px] text-white focus:outline-none focus:border-[#C5A059] transition cursor-pointer"
+                    >
+                      <option value="friendly_respectful">{lang === "ar" ? "🤝 ودود ومهذب ولطيف" : "🤝 Friendly & Respectful"}</option>
+                      <option value="direct_promo">{lang === "ar" ? "🔥 ترويجي مباشر / عرض قوي" : "🔥 Short Pitch & Promo Offer"}</option>
+                      <option value="curiosity_hook">{lang === "ar" ? "⚡ جذب انتباه وتشويق" : "⚡ Curiosity/Urgency Hook"}</option>
+                      <option value="professional_b2b">{lang === "ar" ? "💼 مهني ورسمي للأعمال" : "💼 Professional Business-like"}</option>
+                    </select>
+                  </div>
+                  
+                  <div className="space-y-1">
+                    <span className="text-[10px] text-[#8E9299] font-medium block">
+                      {lang === "ar" ? "اللهجة والأسلوب" : "Language Dialect / Style"}
+                    </span>
+                    <select
+                      value={aiLangStyle}
+                      onChange={(e) => setAiLangStyle(e.target.value)}
+                      className="w-full bg-[#14171D] border border-[#2D3139] rounded-lg px-2.5 py-1.5 text-[11px] text-white focus:outline-none focus:border-[#C5A059] transition cursor-pointer"
+                    >
+                      <option value="Iraqi Arabic">{lang === "ar" ? "🇮🇶 اللهجة العراقية اليومية" : "🇮🇶 Iraqi Colloquial Arabic"}</option>
+                      <option value="Modern Standard Arabic">{lang === "ar" ? "🇸🇦 الفصحى المبسطة" : "🇸🇦 Standard Arabic"}</option>
+                      <option value="Soranî Kurdish">{lang === "ar" ? "☀️ كوردى سورانى (Erbil)" : "☀️ Soranî Kurdish"}</option>
+                      <option value="English">{lang === "ar" ? "🇬🇧 الإنجليزية التسويقية" : "🇬🇧 Marketing English"}</option>
+                    </select>
+                  </div>
+                </div>
+
+                {aiError && (
+                  <p className="text-[10px] text-red-400 font-sans leading-relaxed">
+                    ⚠️ {aiError}
+                  </p>
+                )}
+
+                <div className="flex justify-end pt-1">
+                  <button
+                    type="button"
+                    disabled={aiLoading}
+                    onClick={handleAiOptimize}
+                    className="bg-[#C5A059]/10 hover:bg-[#C5A059]/25 border border-[#C5A059]/20 text-[#C5A059] text-[11px] font-bold px-3.5 py-1.5 rounded-lg transition-all flex items-center gap-1.5 cursor-pointer disabled:opacity-50"
+                  >
+                    {aiLoading ? (
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-2.5 h-2.5 border-2 border-[#C5A059] border-t-transparent rounded-full animate-spin" />
+                        {lang === "ar" ? "جاري التوليد..." : "Refining with Gemini..."}
+                      </span>
+                    ) : (
+                      <>
+                        <Sparkles size={11} className="text-[#C5A059]" />
+                        {lang === "ar" ? "تحسين بالذكاء الاصطناعي ✨" : "Improve Draft Copy with AI ✨"}
+                      </>
+                    )}
+                  </button>
+                </div>
+              </div>
             </div>
 
             <div className="flex gap-2 justify-end">
